@@ -1,11 +1,8 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
 const std = @import("std");
 
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    std.debug.print("Welcome to zcad debugging stream\n", .{});
 
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
@@ -14,24 +11,34 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    try stdout.print("Welcome to zcad.\n", .{});
 
     try bw.flush(); // Don't forget to flush!
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
+// This is unitless, and an unsigned integer by design. For higher precision
+// maths, simply scale these values differently - for example, if 1000
+// represents the value "1 inch", then this provides precision to 0.001 of an
+// inch.
+//
+// For reference, let's say you needed 0.000001 inches precision, then these
+// u64's could represent up to ~18.4e13 inches, or 291 million miles (roughly
+// twice the distance from the sun to mars).
+const Point = struct {
+    x: u64,
+    y: u64,
+    z: u64,
 
-test "fuzz example" {
-    const global = struct {
-        fn testOne(input: []const u8) anyerror!void {
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(global.testOne, .{});
+    pub fn Equals(self: Point, other: Point) bool {
+        return self.x == other.x and self.y == other.y and self.z == other.z;
+    }
+};
+
+test "Point equality" {
+    const p1 = Point{ .x = 10, .y = 1000, .z = 10000 };
+    const p2 = Point{ .x = 10, .y = 1000, .z = 10000 };
+    const p3 = Point{ .x = 11, .y = 1000, .z = 10000 };
+
+    try std.testing.expect(p1.Equals(p2));
+    try std.testing.expect(!p2.Equals(p3));
 }
