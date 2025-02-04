@@ -3,7 +3,20 @@
     .version = "0.0.0",
     .minimum_zig_version = "0.14.0",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .@"zig-wayland" = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/next-zig.tar.gz",
+            .hash = "1220b00f822505dfa3db2a91f7a7fa14f9357780b1a4093ba27193b2284d52925093",
+        },
+        .vulkan_zig = .{
+            .url = "https://github.com/Snektron/vulkan-zig/archive/master.tar.gz",
+            .hash = "122096b4021c4bb35d373d589a31237e2ac834969ea50401d73cc50780aaec8ea367",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.304.tar.gz",
+            .hash = "1220e439f44d3a6ce1112d00d3002cb442f3806f8674dbbeb941398a2ec03e717c8f",
+        },
+    },
 
     .paths = .{
         "build.zig",
