@@ -302,7 +302,6 @@ const VulkanContext = struct {
         vk.features.version_1_1,
         vk.features.version_1_2,
         vk.features.version_1_3,
-        vk.features.version_1_4,
         vk.extensions.khr_surface,
         vk.extensions.khr_swapchain,
         vk.extensions.khr_wayland_surface,
@@ -346,7 +345,7 @@ const VulkanContext = struct {
             .p_application_name = "zcad vulkan",
             .application_version = vk.makeApiVersion(0, 0, 0, 0),
             .engine_version = vk.makeApiVersion(0, 0, 0, 0),
-            .api_version = vk.API_VERSION_1_4,
+            .api_version = vk.API_VERSION_1_3,
         };
 
         // TODO: add checks to ensure the requested extensions are supported, see
@@ -415,7 +414,7 @@ const VulkanContext = struct {
                 std.debug.print("  Major version {d} is too low, expected at least 1\n", .{major_version});
                 continue;
             }
-            if (vk.apiVersionMinor(api_version) < 4) {
+            if (vk.apiVersionMinor(api_version) < 3) {
                 std.debug.print("  Minor version {d} is too low, expected at least 4\n", .{minor_version});
                 continue;
             }
