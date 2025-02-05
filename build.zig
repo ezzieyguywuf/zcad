@@ -9,9 +9,10 @@ pub fn build(b: *std.Build) void {
     const scanner = Scanner.create(b, .{});
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+    scanner.addSystemProtocol("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml");
     scanner.generate("wl_compositor", 1);
-    scanner.generate("wl_shm", 1);
     scanner.generate("xdg_wm_base", 1);
+    scanner.generate("zxdg_decoration_manager_v1", 1);
 
     const vulkan = b.dependency("vulkan_zig", .{
         .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
