@@ -959,12 +959,12 @@ fn createCommandBuffers(
 }
 
 const vertices = [_]Vertex{
-    .{ .pos = .{ 0, -0.5 }, .color = .{ 1, 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0, 1, 0 } },
-    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0, 0, 1 } },
+    .{ .pos = .{ 0, -0.5, 0 }, .color = .{ 1, 0, 0 } },
+    .{ .pos = .{ 0.5, 0.5, 0 }, .color = .{ 0, 1, 0 } },
+    .{ .pos = .{ -0.5, 0.5, 0 }, .color = .{ 0, 0, 1 } },
 };
 
-const Vertex = struct {
+pub const Vertex = struct {
     const binding_description = vk.VertexInputBindingDescription{
         .binding = 0,
         .stride = @sizeOf(Vertex),
@@ -986,7 +986,7 @@ const Vertex = struct {
         },
     };
 
-    pos: [2]f32,
+    pos: [3]f32,
     color: [3]f32,
 };
 
