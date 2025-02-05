@@ -18,8 +18,11 @@ pub const Renderer = struct {
     buffer: vk.Buffer,
     memory: vk.DeviceMemory,
     command_buffers: []vk.CommandBuffer,
+    width: u32,
+    height: u32,
 
-    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, extent: vk.Extent2D) !Renderer {
+    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
+        const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
@@ -59,6 +62,8 @@ pub const Renderer = struct {
             .buffer = buffer,
             .memory = memory,
             .command_buffers = command_buffers,
+            .width = width,
+            .height = height,
         };
     }
 
@@ -73,7 +78,7 @@ pub const Renderer = struct {
         allocator.free(self.command_buffers);
     }
 
-    pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, extent: *vk.Extent2D, wl_context: *const wl.WaylandContext) !void {
+    pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_context: *const wl.WaylandContext) !void {
         const command_buffer = self.command_buffers[self.swapchain.current_image_index];
 
         const state = self.swapchain.present(vk_ctx, command_buffer) catch |err| switch (err) {
@@ -81,12 +86,13 @@ pub const Renderer = struct {
             else => |narrow| return narrow,
         };
 
-        if (state == .suboptimal or extent.width != @as(u32, @intCast(wl_context.width)) or extent.height != @as(u32, @intCast(wl_context.height))) {
-            extent.width = @intCast(wl_context.width);
-            extent.height = @intCast(wl_context.height);
+        if (state == .suboptimal or self.width != @as(u32, @intCast(wl_context.width)) or self.height != @as(u32, @intCast(wl_context.height))) {
+            self.width = @intCast(wl_context.width);
+            self.height = @intCast(wl_context.height);
+            const extent = vk.Extent2D{ .width = self.width, .height = self.height };
             try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
             try vk_ctx.device.queueWaitIdle(vk_ctx.presentation_queue);
-            try self.swapchain.recreate(allocator, vk_ctx, extent.*);
+            try self.swapchain.recreate(allocator, vk_ctx, extent);
 
             for (self.framebuffers) |fb| vk_ctx.device.destroyFramebuffer(fb, null);
             allocator.free(self.framebuffers);
@@ -99,7 +105,7 @@ pub const Renderer = struct {
                 self.command_pool,
                 allocator,
                 self.buffer,
-                extent.*,
+                extent,
                 self.render_pass,
                 self.pipeline,
                 self.framebuffers,

@@ -28,18 +28,19 @@ pub fn main() !void {
 
     // vulkan
     const vk_ctx = try vkr.VulkanContext.init(allocator, wl_context);
-    var extent = vk.Extent2D{
-        .width = @intCast(wl_context.width),
-        .height = @intCast(wl_context.height),
-    };
-    var renderer = try vkr.Renderer.init(allocator, &vk_ctx, extent);
+    var renderer = try vkr.Renderer.init(
+        allocator,
+        &vk_ctx,
+        @intCast(wl_context.width),
+        @intCast(wl_context.height),
+    );
     defer renderer.deinit(allocator, &vk_ctx);
 
     while (!wl_context.should_exit) {
         const should_render = try wl_context.run();
         if (!should_render) continue;
 
-        try renderer.render(allocator, &vk_ctx, &extent, wl_context);
+        try renderer.render(allocator, &vk_ctx, wl_context);
     }
 
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);
