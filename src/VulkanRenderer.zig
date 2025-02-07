@@ -44,7 +44,7 @@ pub const Renderer = struct {
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
         const buffer_create_info = vk.BufferCreateInfo{
-            .size = vertices.len * @sizeOf(@TypeOf(vertices[0])),
+            .size = vertices.len * @sizeOf(Vertex),
             .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
             .sharing_mode = .exclusive,
         };
@@ -67,13 +67,12 @@ pub const Renderer = struct {
             .n_vertices = @intCast(vertices.len),
         };
 
+        try renderer.uploadVertices(vk_ctx, vertices);
         try renderer.createCommandBuffers(
             allocator,
             &vk_ctx.device,
             .{ .width = @intCast(width), .height = @intCast(height) },
         );
-
-        try renderer.uploadVertices(vk_ctx, vertices);
 
         return renderer;
     }
@@ -181,7 +180,7 @@ pub const Renderer = struct {
         try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
 
         // Upload Vertices
-        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
+        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(Vertex);
         const staging_buffer_create_info = vk.BufferCreateInfo{
             .size = size,
             .usage = .{ .transfer_src_bit = true },
@@ -282,6 +281,12 @@ pub const Renderer = struct {
             vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
             allocator.free(self.command_buffers);
 
+            // const buffer_create_info = vk.BufferCreateInfo{
+            //     .size = self.n_vertices * @sizeOf(Vertex),
+            //     .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+            //     .sharing_mode = .exclusive,
+            // };
+            // self.buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
             try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
         }
     }
