@@ -20,8 +20,9 @@ pub const Renderer = struct {
     command_buffers: []vk.CommandBuffer,
     width: u32,
     height: u32,
+    n_vertices: u32,
 
-    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
+    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32, vertices: []const Vertex) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
@@ -42,14 +43,15 @@ pub const Renderer = struct {
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
+        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
         const buffer_create_info = vk.BufferCreateInfo{
-            .size = @sizeOf(@TypeOf(vertices)),
+            .size = size,
             .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
             .sharing_mode = .exclusive,
         };
         const buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
 
-        const memory: vk.DeviceMemory = try vk_ctx.uploadVertices(buffer, command_pool);
+        const memory: vk.DeviceMemory = try vk_ctx.uploadVertices(buffer, command_pool, vertices);
 
         return Renderer{
             .swapchain = swapchain,
@@ -62,6 +64,7 @@ pub const Renderer = struct {
             .command_buffers = undefined,
             .width = width,
             .height = height,
+            .n_vertices = @intCast(vertices.len),
         };
     }
 
@@ -134,7 +137,7 @@ pub const Renderer = struct {
             device.cmdBindPipeline(cmdbuf, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
             device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.buffer), &offset);
-            device.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
+            device.cmdDraw(cmdbuf, self.n_vertices, 1, 0, 0);
 
             device.cmdEndRenderPass(cmdbuf);
             try device.endCommandBuffer(cmdbuf);
@@ -578,7 +581,7 @@ pub const VulkanContext = struct {
         return framebuffers;
     }
 
-    pub fn uploadVertices(self: *const VulkanContext, buffer: vk.Buffer, command_pool: vk.CommandPool) !vk.DeviceMemory {
+    pub fn uploadVertices(self: *const VulkanContext, buffer: vk.Buffer, command_pool: vk.CommandPool, vertices: []const Vertex) !vk.DeviceMemory {
         const memory_requirements = self.device.getBufferMemoryRequirements(buffer);
         // TODO bundle this whenever we fetch the physical device
         const physical_device_memory_properties = self.instance.getPhysicalDeviceMemoryProperties(self.physical_device);
@@ -602,8 +605,9 @@ pub const VulkanContext = struct {
         try self.device.bindBufferMemory(buffer, memory, 0);
 
         // Upload Vertices
+        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
         const staging_buffer_create_info = vk.BufferCreateInfo{
-            .size = @sizeOf(@TypeOf(vertices)),
+            .size = size,
             .usage = .{ .transfer_src_bit = true },
             .sharing_mode = .exclusive,
         };
@@ -662,7 +666,7 @@ pub const VulkanContext = struct {
             const region = vk.BufferCopy{
                 .src_offset = 0,
                 .dst_offset = 0,
-                .size = @sizeOf(@TypeOf(vertices)),
+                .size = size,
             };
             command_buffer.copyBuffer(staging_buffer, buffer, 1, @ptrCast(&region));
 
@@ -945,12 +949,6 @@ const SwapImage = struct {
     fn waitForFence(self: SwapImage, device: *const VulkanContext.Device) !void {
         _ = try device.waitForFences(1, @ptrCast(&self.frame_fence), vk.TRUE, std.math.maxInt(u64));
     }
-};
-
-const vertices = [_]Vertex{
-    .{ .pos = .{ 0, -0.5, 0 }, .color = .{ 1, 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5, 0 }, .color = .{ 0, 1, 0 } },
-    .{ .pos = .{ -0.5, 0.5, 0 }, .color = .{ 0, 0, 1 } },
 };
 
 pub const Vertex = struct {

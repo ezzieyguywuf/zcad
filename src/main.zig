@@ -26,6 +26,28 @@ pub fn main() !void {
     defer allocator.destroy(wl_context);
     try wl.WaylandContext.init(wl_context, 680, 420);
 
+    // zcad
+    const points = [_]Point{
+        .{ .x = 0, .y = -5, .z = 0 },
+        .{ .x = 5, .y = 5, .z = 0 },
+        .{ .x = -5, .y = 5, .z = 0 },
+    };
+    const scale: f32 = 10;
+    var vkVertices = std.mem.zeroes([3]vkr.Vertex);
+
+    for (points, 0..) |point, i| {
+        var color = [_]f32{ 0, 0, 0 };
+        color[i] = 1;
+        vkVertices[i] = .{
+            .pos = .{
+                @as(f32, @floatFromInt(point.x)) / scale,
+                @as(f32, @floatFromInt(point.y)) / scale,
+                @as(f32, @floatFromInt(point.z)) / scale,
+            },
+            .color = color,
+        };
+    }
+
     // vulkan
     const vk_ctx = try vkr.VulkanContext.init(allocator, wl_context);
     var renderer = try vkr.Renderer.init(
@@ -33,6 +55,7 @@ pub fn main() !void {
         &vk_ctx,
         @intCast(wl_context.width),
         @intCast(wl_context.height),
+        &vkVertices,
     );
     defer renderer.deinit(allocator, &vk_ctx);
 
