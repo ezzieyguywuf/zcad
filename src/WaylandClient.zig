@@ -36,12 +36,11 @@ pub const WaylandContext = struct {
 
         const wl_compositor = wl_globals.compositor orelse return error.NoWlCompositor;
         const wm_base = wl_globals.wm_base orelse return error.NoXdgWmBase;
-        const zxdg_decoration_manager_v1 = wl_globals.zxdg_decoration_manager_v1 orelse return error.NoZxdgDecorationManagerV1;
+        const zxdg_decoration_manager_v1 = wl_globals.zxdg_decoration_manager_v1 orelse null;
 
         const surface = try wl_compositor.createSurface();
         const xdg_surface = try wm_base.getXdgSurface(surface);
         const xdg_toplevel = try xdg_surface.getToplevel();
-        const zxdg_toplevel_decoration_v1 = try zxdg_decoration_manager_v1.getToplevelDecoration(xdg_toplevel);
 
         self.display = display;
         self.registry = registry;
@@ -50,7 +49,6 @@ pub const WaylandContext = struct {
         self.surface = surface;
         self.xdg_surface = xdg_surface;
         self.xdg_toplevel = xdg_toplevel;
-        self.zxdg_toplevel_decoration_v1 = zxdg_toplevel_decoration_v1;
         self.width = width;
         self.height = height;
         xdg_toplevel.setListener(*WaylandContext, xdgTopLevelListener, self);
@@ -59,7 +57,11 @@ pub const WaylandContext = struct {
         self.xdg_surface.setListener(*WaylandContext, xdgSurfaceListener, self);
         self.surface.commit();
 
-        zxdg_toplevel_decoration_v1.setListener(*WaylandContext, zxdgToplevelDecorationV1Listener, self);
+        if (zxdg_decoration_manager_v1 != null) {
+            const zxdg_toplevel_decoration_v1 = try zxdg_decoration_manager_v1.?.getToplevelDecoration(xdg_toplevel);
+            self.zxdg_toplevel_decoration_v1 = zxdg_toplevel_decoration_v1;
+            zxdg_toplevel_decoration_v1.setListener(*WaylandContext, zxdgToplevelDecorationV1Listener, self);
+        }
 
         if (self.display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
 
