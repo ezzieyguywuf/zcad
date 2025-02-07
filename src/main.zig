@@ -22,9 +22,9 @@ pub fn main() !void {
     try bw.flush(); // Don't forget to flush!
 
     // Wayland
-    var wl_context = try allocator.create(wl.WaylandContext);
-    defer allocator.destroy(wl_context);
-    try wl.WaylandContext.init(wl_context, 680, 420);
+    var wl_ctx = try allocator.create(wl.WaylandContext);
+    defer allocator.destroy(wl_ctx);
+    try wl.WaylandContext.init(wl_ctx, 680, 420);
 
     // zcad
     const points = [_]Point{
@@ -49,22 +49,26 @@ pub fn main() !void {
     }
 
     // vulkan
-    const vk_ctx = try vkr.VulkanContext.init(allocator, wl_context);
+    const vk_ctx = try vkr.VulkanContext.init(allocator, wl_ctx);
     var renderer = try vkr.Renderer.init(
         allocator,
         &vk_ctx,
-        @intCast(wl_context.width),
-        @intCast(wl_context.height),
+        @intCast(wl_ctx.width),
+        @intCast(wl_ctx.height),
         &vkVertices,
     );
     defer renderer.deinit(allocator, &vk_ctx);
 
-    try renderer.createCommandBuffers(allocator, &vk_ctx.device, .{ .width = @intCast(wl_context.width), .height = @intCast(wl_context.height) });
-    while (!wl_context.should_exit) {
-        const should_render = try wl_context.run();
+    try renderer.createCommandBuffers(
+        allocator,
+        &vk_ctx.device,
+        .{ .width = @intCast(wl_ctx.width), .height = @intCast(wl_ctx.height) },
+    );
+    while (!wl_ctx.should_exit) {
+        const should_render = try wl_ctx.run();
         if (!should_render) continue;
 
-        try renderer.render(allocator, &vk_ctx, wl_context);
+        try renderer.render(allocator, &vk_ctx, wl_ctx);
     }
 
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);

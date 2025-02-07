@@ -144,7 +144,7 @@ pub const Renderer = struct {
         }
     }
 
-    pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_context: *const wl.WaylandContext) !void {
+    pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_ctx: *const wl.WaylandContext) !void {
         const command_buffer = self.command_buffers[self.swapchain.current_image_index];
 
         const state = self.swapchain.present(vk_ctx, command_buffer) catch |err| switch (err) {
@@ -152,9 +152,9 @@ pub const Renderer = struct {
             else => |narrow| return narrow,
         };
 
-        if (state == .suboptimal or self.width != @as(u32, @intCast(wl_context.width)) or self.height != @as(u32, @intCast(wl_context.height))) {
-            self.width = @intCast(wl_context.width);
-            self.height = @intCast(wl_context.height);
+        if (state == .suboptimal or self.width != @as(u32, @intCast(wl_ctx.width)) or self.height != @as(u32, @intCast(wl_ctx.height))) {
+            self.width = @intCast(wl_ctx.width);
+            self.height = @intCast(wl_ctx.height);
             const extent = vk.Extent2D{ .width = self.width, .height = self.height };
             try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
             try vk_ctx.device.queueWaitIdle(vk_ctx.presentation_queue);
@@ -208,7 +208,7 @@ pub const VulkanContext = struct {
     graphics_queue: vk.Queue,
     presentation_queue: vk.Queue,
 
-    pub fn init(allocator: std.mem.Allocator, wl_context: *const wl.WaylandContext) !VulkanContext {
+    pub fn init(allocator: std.mem.Allocator, wl_ctx: *const wl.WaylandContext) !VulkanContext {
         // TODO: try (again) to see if we can do this without linking vulkan and
         // importing the c-thing, e.g. can we do this in pure zig.
         const get_instance_proc_addr: vk.PfnGetInstanceProcAddr = @extern(vk.PfnGetInstanceProcAddr, .{
@@ -267,8 +267,8 @@ pub const VulkanContext = struct {
         defer instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
 
         const create_wayland_surface_info = vk.WaylandSurfaceCreateInfoKHR{
-            .display = @ptrCast(wl_context.display),
-            .surface = @ptrCast(wl_context.surface),
+            .display = @ptrCast(wl_ctx.display),
+            .surface = @ptrCast(wl_ctx.surface),
         };
         const surface = try instance.createWaylandSurfaceKHR(&create_wayland_surface_info, null);
         errdefer instance.destroySurfaceKHR(surface, null);
