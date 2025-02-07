@@ -36,6 +36,7 @@ pub fn main() !void {
     );
     defer renderer.deinit(allocator, &vk_ctx);
 
+    try renderer.createCommandBuffers(allocator, &vk_ctx.device, .{ .width = @intCast(wl_context.width), .height = @intCast(wl_context.height) });
     while (!wl_context.should_exit) {
         const should_render = try wl_context.run();
         if (!should_render) continue;

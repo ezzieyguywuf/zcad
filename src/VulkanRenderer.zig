@@ -51,8 +51,6 @@ pub const Renderer = struct {
 
         const memory: vk.DeviceMemory = try vk_ctx.uploadVertices(buffer, command_pool);
 
-        const command_buffers = try createCommandBuffers(&vk_ctx.device, command_pool, allocator, buffer, extent, render_pass, pipeline, framebuffers);
-
         return Renderer{
             .swapchain = swapchain,
             .render_pass = render_pass,
@@ -61,7 +59,7 @@ pub const Renderer = struct {
             .command_pool = command_pool,
             .buffer = buffer,
             .memory = memory,
-            .command_buffers = command_buffers,
+            .command_buffers = undefined,
             .width = width,
             .height = height,
         };
@@ -76,6 +74,71 @@ pub const Renderer = struct {
         vk_ctx.device.freeMemory(self.memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
         allocator.free(self.command_buffers);
+    }
+
+    pub fn createCommandBuffers(
+        self: *Renderer,
+        allocator: std.mem.Allocator,
+        device: *const VulkanContext.Device,
+        extent: vk.Extent2D,
+    ) !void {
+        self.command_buffers = try allocator.alloc(vk.CommandBuffer, self.framebuffers.len);
+        errdefer allocator.free(self.command_buffers);
+
+        const command_buffer_allocate_info = vk.CommandBufferAllocateInfo{
+            .command_pool = self.command_pool,
+            .level = .primary,
+            .command_buffer_count = @intCast(self.command_buffers.len),
+        };
+        try device.allocateCommandBuffers(&command_buffer_allocate_info, self.command_buffers.ptr);
+        errdefer device.freeCommandBuffers(self.command_pool, @intCast(self.command_buffers.len), self.command_buffers.ptr);
+
+        const clear = vk.ClearValue{
+            .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
+        };
+
+        const viewport = vk.Viewport{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(extent.width),
+            .height = @floatFromInt(extent.height),
+            .min_depth = 0,
+            .max_depth = 1,
+        };
+
+        const scissor = vk.Rect2D{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = extent,
+        };
+
+        for (self.command_buffers, self.framebuffers) |cmdbuf, framebuffer| {
+            try device.beginCommandBuffer(cmdbuf, &.{});
+
+            device.cmdSetViewport(cmdbuf, 0, 1, @ptrCast(&viewport));
+            device.cmdSetScissor(cmdbuf, 0, 1, @ptrCast(&scissor));
+
+            // This needs to be a separate definition - see https://github.com/ziglang/zig/issues/7627.
+            const render_area = vk.Rect2D{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = extent,
+            };
+
+            device.cmdBeginRenderPass(cmdbuf, &.{
+                .render_pass = self.render_pass,
+                .framebuffer = framebuffer,
+                .render_area = render_area,
+                .clear_value_count = 1,
+                .p_clear_values = @ptrCast(&clear),
+            }, .@"inline");
+
+            device.cmdBindPipeline(cmdbuf, .graphics, self.pipeline);
+            const offset = [_]vk.DeviceSize{0};
+            device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.buffer), &offset);
+            device.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
+
+            device.cmdEndRenderPass(cmdbuf);
+            try device.endCommandBuffer(cmdbuf);
+        }
     }
 
     pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_context: *const wl.WaylandContext) !void {
@@ -100,16 +163,7 @@ pub const Renderer = struct {
             vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
             allocator.free(self.command_buffers);
 
-            self.command_buffers = try createCommandBuffers(
-                &vk_ctx.device,
-                self.command_pool,
-                allocator,
-                self.buffer,
-                extent,
-                self.render_pass,
-                self.pipeline,
-                self.framebuffers,
-            );
+            try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
         }
     }
 };
@@ -892,77 +946,6 @@ const SwapImage = struct {
         _ = try device.waitForFences(1, @ptrCast(&self.frame_fence), vk.TRUE, std.math.maxInt(u64));
     }
 };
-
-fn createCommandBuffers(
-    device: *const VulkanContext.Device,
-    pool: vk.CommandPool,
-    allocator: std.mem.Allocator,
-    buffer: vk.Buffer,
-    extent: vk.Extent2D,
-    render_pass: vk.RenderPass,
-    pipeline: vk.Pipeline,
-    framebuffers: []vk.Framebuffer,
-) ![]vk.CommandBuffer {
-    const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
-    errdefer allocator.free(command_buffers);
-
-    const command_buffer_allocate_info = vk.CommandBufferAllocateInfo{
-        .command_pool = pool,
-        .level = .primary,
-        .command_buffer_count = @intCast(command_buffers.len),
-    };
-    try device.allocateCommandBuffers(&command_buffer_allocate_info, command_buffers.ptr);
-    errdefer device.freeCommandBuffers(pool, @intCast(command_buffers.len), command_buffers.ptr);
-
-    const clear = vk.ClearValue{
-        .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
-    };
-
-    const viewport = vk.Viewport{
-        .x = 0,
-        .y = 0,
-        .width = @floatFromInt(extent.width),
-        .height = @floatFromInt(extent.height),
-        .min_depth = 0,
-        .max_depth = 1,
-    };
-
-    const scissor = vk.Rect2D{
-        .offset = .{ .x = 0, .y = 0 },
-        .extent = extent,
-    };
-
-    for (command_buffers, framebuffers) |cmdbuf, framebuffer| {
-        try device.beginCommandBuffer(cmdbuf, &.{});
-
-        device.cmdSetViewport(cmdbuf, 0, 1, @ptrCast(&viewport));
-        device.cmdSetScissor(cmdbuf, 0, 1, @ptrCast(&scissor));
-
-        // This needs to be a separate definition - see https://github.com/ziglang/zig/issues/7627.
-        const render_area = vk.Rect2D{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = extent,
-        };
-
-        device.cmdBeginRenderPass(cmdbuf, &.{
-            .render_pass = render_pass,
-            .framebuffer = framebuffer,
-            .render_area = render_area,
-            .clear_value_count = 1,
-            .p_clear_values = @ptrCast(&clear),
-        }, .@"inline");
-
-        device.cmdBindPipeline(cmdbuf, .graphics, pipeline);
-        const offset = [_]vk.DeviceSize{0};
-        device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&buffer), &offset);
-        device.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
-
-        device.cmdEndRenderPass(cmdbuf);
-        try device.endCommandBuffer(cmdbuf);
-    }
-
-    return command_buffers;
-}
 
 const vertices = [_]Vertex{
     .{ .pos = .{ 0, -0.5, 0 }, .color = .{ 1, 0, 0 } },
