@@ -43,17 +43,17 @@ pub const Renderer = struct {
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
-        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
         const buffer_create_info = vk.BufferCreateInfo{
-            .size = size,
+            .size = vertices.len * @sizeOf(@TypeOf(vertices[0])),
             .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
             .sharing_mode = .exclusive,
         };
         const buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
 
-        const memory: vk.DeviceMemory = try vk_ctx.uploadVertices(buffer, command_pool, vertices);
+        const memory = try initializeMemory(vk_ctx, buffer);
+        const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
 
-        return Renderer{
+        var renderer = Renderer{
             .swapchain = swapchain,
             .render_pass = render_pass,
             .framebuffers = framebuffers,
@@ -61,11 +61,21 @@ pub const Renderer = struct {
             .command_pool = command_pool,
             .buffer = buffer,
             .memory = memory,
-            .command_buffers = undefined,
+            .command_buffers = command_buffers,
             .width = width,
             .height = height,
             .n_vertices = @intCast(vertices.len),
         };
+
+        try renderer.createCommandBuffers(
+            allocator,
+            &vk_ctx.device,
+            .{ .width = @intCast(width), .height = @intCast(height) },
+        );
+
+        try renderer.uploadVertices(vk_ctx, vertices);
+
+        return renderer;
     }
 
     pub fn deinit(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) void {
@@ -142,6 +152,112 @@ pub const Renderer = struct {
             device.cmdEndRenderPass(cmdbuf);
             try device.endCommandBuffer(cmdbuf);
         }
+    }
+
+    pub fn initializeMemory(vk_ctx: *const VulkanContext, buffer: vk.Buffer) !vk.DeviceMemory {
+        const memory_requirements = vk_ctx.device.getBufferMemoryRequirements(buffer);
+        const physical_device_memory_properties = vk_ctx.instance.getPhysicalDeviceMemoryProperties(vk_ctx.physical_device);
+        var memory_type_index: ?u32 = null;
+        const memory_types = physical_device_memory_properties.memory_types;
+        const n_memory_types = physical_device_memory_properties.memory_type_count;
+        const memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
+        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
+            if (memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
+                memory_type_index = @truncate(i);
+            }
+        }
+        if (memory_type_index == null) {
+            return error.NoSuitableMemoryType;
+        }
+        const memory_allocate_info = vk.MemoryAllocateInfo{
+            .allocation_size = memory_requirements.size,
+            .memory_type_index = memory_type_index.?,
+        };
+        return try vk_ctx.device.allocateMemory(&memory_allocate_info, null);
+    }
+
+    pub fn uploadVertices(self: *Renderer, vk_ctx: *const VulkanContext, vertices: []const Vertex) !void {
+        self.memory = try initializeMemory(vk_ctx, self.buffer);
+        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
+
+        // Upload Vertices
+        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
+        const staging_buffer_create_info = vk.BufferCreateInfo{
+            .size = size,
+            .usage = .{ .transfer_src_bit = true },
+            .sharing_mode = .exclusive,
+        };
+        const staging_buffer = try vk_ctx.device.createBuffer(&staging_buffer_create_info, null);
+        defer vk_ctx.device.destroyBuffer(staging_buffer, null);
+        const physical_device_memory_properties = vk_ctx.instance.getPhysicalDeviceMemoryProperties(vk_ctx.physical_device);
+
+        const staging_buffer_memory_requirements = vk_ctx.device.getBufferMemoryRequirements(staging_buffer);
+        var staging_memory_type_index: ?u32 = null;
+        const staging_memory_types = physical_device_memory_properties.memory_types;
+        const n_staging_memory_types = physical_device_memory_properties.memory_type_count;
+        const staging_memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
+        for (staging_memory_types[0..n_staging_memory_types], 0..) |staging_memory_type, i| {
+            if (staging_buffer_memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and staging_memory_type.property_flags.contains(staging_memory_property_flags)) {
+                staging_memory_type_index = @truncate(i);
+            }
+        }
+        if (staging_memory_type_index == null) {
+            return error.NoSuitableMemoryType;
+        }
+        const staging_memory_allocate_info = vk.MemoryAllocateInfo{
+            .allocation_size = staging_buffer_memory_requirements.size,
+            .memory_type_index = staging_memory_type_index.?,
+        };
+        const staging_memory = try vk_ctx.device.allocateMemory(&staging_memory_allocate_info, null);
+        defer vk_ctx.device.freeMemory(staging_memory, null);
+        try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
+
+        { // we want to unmap memory as soon as we're done with it, thus this
+            // anonymous scope
+            const data = try vk_ctx.device.mapMemory(staging_memory, 0, vk.WHOLE_SIZE, .{});
+            defer vk_ctx.device.unmapMemory(staging_memory);
+
+            const gpu_vertices: [*]Vertex = @ptrCast(@alignCast(data));
+            @memcpy(gpu_vertices, vertices[0..]);
+        }
+
+        // finish upload vertices
+
+        // copy buffer
+        var command_buffer_handle: vk.CommandBuffer = undefined;
+        try vk_ctx.device.allocateCommandBuffers(&.{
+            .command_pool = self.command_pool,
+            .level = .primary,
+            .command_buffer_count = 1,
+        }, @ptrCast(&command_buffer_handle));
+        defer vk_ctx.device.freeCommandBuffers(self.command_pool, 1, @ptrCast(&command_buffer_handle));
+
+        { // this command buffer must be cleaned up, we can't reuse it, thus
+            // unnamed scope
+            const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, vk_ctx.device.wrapper);
+
+            try command_buffer.beginCommandBuffer(&.{
+                .flags = .{ .one_time_submit_bit = true },
+            });
+
+            const region = vk.BufferCopy{
+                .src_offset = 0,
+                .dst_offset = 0,
+                .size = size,
+            };
+            command_buffer.copyBuffer(staging_buffer, self.buffer, 1, @ptrCast(&region));
+
+            try command_buffer.endCommandBuffer();
+
+            const submit_info = vk.SubmitInfo{
+                .command_buffer_count = 1,
+                .p_command_buffers = (&command_buffer.handle)[0..1],
+                .p_wait_dst_stage_mask = undefined,
+            };
+            try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
+            try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
+        }
+        // end copy buffer
     }
 
     pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_ctx: *const wl.WaylandContext) !void {
@@ -474,9 +590,9 @@ pub const VulkanContext = struct {
 
         const pipeline_viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
             .viewport_count = 1,
-            .p_viewports = undefined, // set in createCommandBuffers with cmdSetViewport
+            .p_viewports = undefined,
             .scissor_count = 1,
-            .p_scissors = undefined, // set in createCommandBuffers with cmdSetScissor
+            .p_scissors = undefined,
         };
 
         const pipeline_rasterization_state_create_info = vk.PipelineRasterizationStateCreateInfo{
@@ -579,109 +695,6 @@ pub const VulkanContext = struct {
         }
 
         return framebuffers;
-    }
-
-    pub fn uploadVertices(self: *const VulkanContext, buffer: vk.Buffer, command_pool: vk.CommandPool, vertices: []const Vertex) !vk.DeviceMemory {
-        const memory_requirements = self.device.getBufferMemoryRequirements(buffer);
-        // TODO bundle this whenever we fetch the physical device
-        const physical_device_memory_properties = self.instance.getPhysicalDeviceMemoryProperties(self.physical_device);
-        var memory_type_index: ?u32 = null;
-        const memory_types = physical_device_memory_properties.memory_types;
-        const n_memory_types = physical_device_memory_properties.memory_type_count;
-        const memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
-        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
-            if (memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
-                memory_type_index = @truncate(i);
-            }
-        }
-        if (memory_type_index == null) {
-            return error.NoSuitableMemoryType;
-        }
-        const memory_allocate_info = vk.MemoryAllocateInfo{
-            .allocation_size = memory_requirements.size,
-            .memory_type_index = memory_type_index.?,
-        };
-        const memory = try self.device.allocateMemory(&memory_allocate_info, null);
-        try self.device.bindBufferMemory(buffer, memory, 0);
-
-        // Upload Vertices
-        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(@TypeOf(vertices[0]));
-        const staging_buffer_create_info = vk.BufferCreateInfo{
-            .size = size,
-            .usage = .{ .transfer_src_bit = true },
-            .sharing_mode = .exclusive,
-        };
-        const staging_buffer = try self.device.createBuffer(&staging_buffer_create_info, null);
-        defer self.device.destroyBuffer(staging_buffer, null);
-
-        const staging_buffer_memory_requirements = self.device.getBufferMemoryRequirements(staging_buffer);
-        var staging_memory_type_index: ?u32 = null;
-        const staging_memory_types = physical_device_memory_properties.memory_types;
-        const n_staging_memory_types = physical_device_memory_properties.memory_type_count;
-        const staging_memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
-        for (staging_memory_types[0..n_staging_memory_types], 0..) |staging_memory_type, i| {
-            if (staging_buffer_memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and staging_memory_type.property_flags.contains(staging_memory_property_flags)) {
-                staging_memory_type_index = @truncate(i);
-            }
-        }
-        if (staging_memory_type_index == null) {
-            return error.NoSuitableMemoryType;
-        }
-        const staging_memory_allocate_info = vk.MemoryAllocateInfo{
-            .allocation_size = staging_buffer_memory_requirements.size,
-            .memory_type_index = staging_memory_type_index.?,
-        };
-        const staging_memory = try self.device.allocateMemory(&staging_memory_allocate_info, null);
-        defer self.device.freeMemory(staging_memory, null);
-        try self.device.bindBufferMemory(staging_buffer, staging_memory, 0);
-
-        { // we want to unmap memory as soon as we're done with it, thus this
-            // anonymous scope
-            const data = try self.device.mapMemory(staging_memory, 0, vk.WHOLE_SIZE, .{});
-            defer self.device.unmapMemory(staging_memory);
-
-            const gpu_vertices: [*]Vertex = @ptrCast(@alignCast(data));
-            @memcpy(gpu_vertices, vertices[0..]);
-        }
-
-        // finish upload vertices
-
-        // copy buffer
-        var command_buffer_handle: vk.CommandBuffer = undefined;
-        try self.device.allocateCommandBuffers(&.{
-            .command_pool = command_pool,
-            .level = .primary,
-            .command_buffer_count = 1,
-        }, @ptrCast(&command_buffer_handle));
-        defer self.device.freeCommandBuffers(command_pool, 1, @ptrCast(&command_buffer_handle));
-
-        { // this command buffer must be cleaned up, we can't reuse it, thus
-            // unnamed scope
-            const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, self.device.wrapper);
-
-            try command_buffer.beginCommandBuffer(&.{
-                .flags = .{ .one_time_submit_bit = true },
-            });
-
-            const region = vk.BufferCopy{
-                .src_offset = 0,
-                .dst_offset = 0,
-                .size = size,
-            };
-            command_buffer.copyBuffer(staging_buffer, buffer, 1, @ptrCast(&region));
-
-            try command_buffer.endCommandBuffer();
-
-            const submit_info = vk.SubmitInfo{
-                .command_buffer_count = 1,
-                .p_command_buffers = (&command_buffer.handle)[0..1],
-                .p_wait_dst_stage_mask = undefined,
-            };
-            try self.device.queueSubmit(self.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
-            try self.device.queueWaitIdle(self.graphics_queue);
-        }
-        // end copy buffer
-        return memory;
     }
 };
 
