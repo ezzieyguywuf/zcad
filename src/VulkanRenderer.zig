@@ -192,62 +192,47 @@ pub const Renderer = struct {
     }
 
     pub fn uploadVertices(self: *Renderer, vk_ctx: *const VulkanContext, vertices: []const Vertex) !void {
-        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
-
-        // Upload to staging buffer
-        const size = vertices.len * @sizeOf(Vertex);
-
         const staging_buffer, const staging_memory = try createBuffer(vk_ctx, Vertex, vertices.len, .{ .transfer_src_bit = true });
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
+
+        const data = try vk_ctx.device.mapMemory(staging_memory, 0, vertices.len, .{});
+        const gpu_vertices: [*]Vertex = @ptrCast(@alignCast(data));
+        @memcpy(gpu_vertices, vertices[0..]);
+        vk_ctx.device.unmapMemory(staging_memory);
+
         try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
+        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
+        try copyBuffer(vk_ctx, self.command_pool, staging_buffer, self.buffer, vertices.len * @sizeOf(Vertex));
+    }
 
-        { // we want to unmap memory as soon as we're done with it, thus this
-            // anonymous scope
-            const data = try vk_ctx.device.mapMemory(staging_memory, 0, vk.WHOLE_SIZE, .{});
-            defer vk_ctx.device.unmapMemory(staging_memory);
-
-            const gpu_vertices: [*]Vertex = @ptrCast(@alignCast(data));
-            @memcpy(gpu_vertices, vertices[0..]);
-        }
-
-        // finish upload to staging buffer
-
-        // copy to final buffer
+    fn copyBuffer(vk_ctx: *const VulkanContext, command_pool: vk.CommandPool, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
         var command_buffer_handle: vk.CommandBuffer = undefined;
         try vk_ctx.device.allocateCommandBuffers(&.{
-            .command_pool = self.command_pool,
+            .command_pool = command_pool,
             .level = .primary,
             .command_buffer_count = 1,
         }, @ptrCast(&command_buffer_handle));
-        defer vk_ctx.device.freeCommandBuffers(self.command_pool, 1, @ptrCast(&command_buffer_handle));
+        defer vk_ctx.device.freeCommandBuffers(command_pool, 1, @ptrCast(&command_buffer_handle));
 
-        { // this command buffer must be cleaned up, we can't reuse it, thus
-            // unnamed scope
-            const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, vk_ctx.device.wrapper);
+        const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, vk_ctx.device.wrapper);
 
-            try command_buffer.beginCommandBuffer(&.{
-                .flags = .{ .one_time_submit_bit = true },
-            });
+        try command_buffer.beginCommandBuffer(&.{ .flags = .{ .one_time_submit_bit = true } });
+        const region = vk.BufferCopy{
+            .src_offset = 0,
+            .dst_offset = 0,
+            .size = size,
+        };
+        command_buffer.copyBuffer(src, dst, 1, @ptrCast(&region));
+        try command_buffer.endCommandBuffer();
 
-            const region = vk.BufferCopy{
-                .src_offset = 0,
-                .dst_offset = 0,
-                .size = size,
-            };
-            command_buffer.copyBuffer(staging_buffer, self.buffer, 1, @ptrCast(&region));
-
-            try command_buffer.endCommandBuffer();
-
-            const submit_info = vk.SubmitInfo{
-                .command_buffer_count = 1,
-                .p_command_buffers = (&command_buffer.handle)[0..1],
-                .p_wait_dst_stage_mask = undefined,
-            };
-            try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
-            try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
-        }
-        // end copy to final buffer
+        const submit_info = vk.SubmitInfo{
+            .command_buffer_count = 1,
+            .p_command_buffers = (&command_buffer.handle)[0..1],
+            .p_wait_dst_stage_mask = undefined,
+        };
+        try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
+        try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
     }
 
     pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_ctx: *const wl.WaylandContext) !void {
