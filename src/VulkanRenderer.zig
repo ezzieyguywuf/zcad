@@ -43,14 +43,12 @@ pub const Renderer = struct {
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
-        const buffer_create_info = vk.BufferCreateInfo{
-            .size = vertices.len * @sizeOf(Vertex),
-            .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-            .sharing_mode = .exclusive,
-        };
-        const buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
-
-        const memory = try initializeMemory(vk_ctx, buffer);
+        const buffer, const memory = try createBuffer(
+            vk_ctx,
+            Vertex,
+            vertices.len,
+            .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        );
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
 
         var renderer = Renderer{
@@ -153,7 +151,7 @@ pub const Renderer = struct {
         }
     }
 
-    pub fn initializeMemory(vk_ctx: *const VulkanContext, buffer: vk.Buffer) !vk.DeviceMemory {
+    pub fn createMemory(vk_ctx: *const VulkanContext, buffer: vk.Buffer) !vk.DeviceMemory {
         const memory_requirements = vk_ctx.device.getBufferMemoryRequirements(buffer);
         const physical_device_memory_properties = vk_ctx.instance.getPhysicalDeviceMemoryProperties(vk_ctx.physical_device);
         var memory_type_index: ?u32 = null;
@@ -175,39 +173,32 @@ pub const Renderer = struct {
         return try vk_ctx.device.allocateMemory(&memory_allocate_info, null);
     }
 
-    pub fn uploadVertices(self: *Renderer, vk_ctx: *const VulkanContext, vertices: []const Vertex) !void {
-        self.memory = try initializeMemory(vk_ctx, self.buffer);
-        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
-
-        // Upload Vertices
-        const size = if (vertices.len == 0) 0 else vertices.len * @sizeOf(Vertex);
-        const staging_buffer_create_info = vk.BufferCreateInfo{
+    fn createBuffer(
+        vk_ctx: *const VulkanContext,
+        item_type: type,
+        n_items: usize,
+        usage: vk.BufferUsageFlags,
+    ) !struct { vk.Buffer, vk.DeviceMemory } {
+        const size = n_items * @sizeOf(item_type);
+        const buffer_create_info = vk.BufferCreateInfo{
             .size = size,
-            .usage = .{ .transfer_src_bit = true },
+            .usage = usage,
             .sharing_mode = .exclusive,
         };
-        const staging_buffer = try vk_ctx.device.createBuffer(&staging_buffer_create_info, null);
-        defer vk_ctx.device.destroyBuffer(staging_buffer, null);
-        const physical_device_memory_properties = vk_ctx.instance.getPhysicalDeviceMemoryProperties(vk_ctx.physical_device);
+        const buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
+        const memory = try createMemory(vk_ctx, buffer);
 
-        const staging_buffer_memory_requirements = vk_ctx.device.getBufferMemoryRequirements(staging_buffer);
-        var staging_memory_type_index: ?u32 = null;
-        const staging_memory_types = physical_device_memory_properties.memory_types;
-        const n_staging_memory_types = physical_device_memory_properties.memory_type_count;
-        const staging_memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
-        for (staging_memory_types[0..n_staging_memory_types], 0..) |staging_memory_type, i| {
-            if (staging_buffer_memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and staging_memory_type.property_flags.contains(staging_memory_property_flags)) {
-                staging_memory_type_index = @truncate(i);
-            }
-        }
-        if (staging_memory_type_index == null) {
-            return error.NoSuitableMemoryType;
-        }
-        const staging_memory_allocate_info = vk.MemoryAllocateInfo{
-            .allocation_size = staging_buffer_memory_requirements.size,
-            .memory_type_index = staging_memory_type_index.?,
-        };
-        const staging_memory = try vk_ctx.device.allocateMemory(&staging_memory_allocate_info, null);
+        return .{ buffer, memory };
+    }
+
+    pub fn uploadVertices(self: *Renderer, vk_ctx: *const VulkanContext, vertices: []const Vertex) !void {
+        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
+
+        // Upload to staging buffer
+        const size = vertices.len * @sizeOf(Vertex);
+
+        const staging_buffer, const staging_memory = try createBuffer(vk_ctx, Vertex, vertices.len, .{ .transfer_src_bit = true });
+        defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
         try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
 
@@ -220,9 +211,9 @@ pub const Renderer = struct {
             @memcpy(gpu_vertices, vertices[0..]);
         }
 
-        // finish upload vertices
+        // finish upload to staging buffer
 
-        // copy buffer
+        // copy to final buffer
         var command_buffer_handle: vk.CommandBuffer = undefined;
         try vk_ctx.device.allocateCommandBuffers(&.{
             .command_pool = self.command_pool,
@@ -256,7 +247,7 @@ pub const Renderer = struct {
             try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
             try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
         }
-        // end copy buffer
+        // end copy to final buffer
     }
 
     pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_ctx: *const wl.WaylandContext) !void {

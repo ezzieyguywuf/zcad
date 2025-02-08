@@ -28,16 +28,21 @@ pub fn main() !void {
 
     // zcad
     const points = [_]Point{
-        .{ .x = 0, .y = -5, .z = 0 },
+        .{ .x = -5, .y = -5, .z = 0 },
+        .{ .x = 5, .y = -5, .z = 0 },
         .{ .x = 5, .y = 5, .z = 0 },
         .{ .x = -5, .y = 5, .z = 0 },
     };
     const scale: f32 = 10;
-    var vkVertices = std.mem.zeroes([3]vkr.Vertex);
+    var vkVertices = std.mem.zeroes([points.len]vkr.Vertex);
 
     for (points, 0..) |point, i| {
         var color = [_]f32{ 0, 0, 0 };
-        color[i] = 1;
+        if (i == 3) {
+            color = [_]f32{ 1, 1, 1 };
+        } else {
+            color[i] = 1;
+        }
         vkVertices[i] = .{
             .pos = .{
                 @as(f32, @floatFromInt(point.x)) / scale,
