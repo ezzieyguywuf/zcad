@@ -15,8 +15,10 @@ pub const Renderer = struct {
     framebuffers: []vk.Framebuffer,
     pipeline: vk.Pipeline,
     command_pool: vk.CommandPool,
-    buffer: vk.Buffer,
-    memory: vk.DeviceMemory,
+    vertex_buffer: vk.Buffer,
+    vertex_memory: vk.DeviceMemory,
+    index_buffer: vk.Buffer,
+    index_memory: vk.DeviceMemory,
     command_buffers: []vk.CommandBuffer,
     width: u32,
     height: u32,
@@ -43,13 +45,20 @@ pub const Renderer = struct {
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
-        const buffer, const memory = try createBuffer(
+        const vertex_buffer, const vertex_memory = try createBuffer(
+            vk_ctx,
+            Vertex,
+            vertices.len,
+            .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        );
+        const index_buffer, const index_memory = try createBuffer(
             vk_ctx,
             Vertex,
             vertices.len,
             .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         );
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
+        try Renderer.uploadData(vk_ctx, Vertex, vertices, command_pool, vertex_buffer, vertex_memory);
 
         var renderer = Renderer{
             .swapchain = swapchain,
@@ -57,15 +66,16 @@ pub const Renderer = struct {
             .framebuffers = framebuffers,
             .pipeline = pipeline,
             .command_pool = command_pool,
-            .buffer = buffer,
-            .memory = memory,
+            .vertex_buffer = vertex_buffer,
+            .vertex_memory = vertex_memory,
+            .index_buffer = index_buffer,
+            .index_memory = index_memory,
             .command_buffers = command_buffers,
             .width = width,
             .height = height,
             .n_vertices = @intCast(vertices.len),
         };
 
-        try renderer.uploadVertices(vk_ctx, vertices);
         try renderer.createCommandBuffers(
             allocator,
             &vk_ctx.device,
@@ -80,8 +90,8 @@ pub const Renderer = struct {
         vk_ctx.device.destroyRenderPass(self.render_pass, null);
         vk_ctx.device.destroyPipeline(self.pipeline, null);
         vk_ctx.device.destroyCommandPool(self.command_pool, null);
-        vk_ctx.device.destroyBuffer(self.buffer, null);
-        vk_ctx.device.freeMemory(self.memory, null);
+        vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
+        vk_ctx.device.freeMemory(self.vertex_memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
         allocator.free(self.command_buffers);
     }
@@ -143,7 +153,7 @@ pub const Renderer = struct {
 
             device.cmdBindPipeline(cmdbuf, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
-            device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.buffer), &offset);
+            device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
             device.cmdDraw(cmdbuf, self.n_vertices, 1, 0, 0);
 
             device.cmdEndRenderPass(cmdbuf);
@@ -191,19 +201,26 @@ pub const Renderer = struct {
         return .{ buffer, memory };
     }
 
-    pub fn uploadVertices(self: *Renderer, vk_ctx: *const VulkanContext, vertices: []const Vertex) !void {
-        const staging_buffer, const staging_memory = try createBuffer(vk_ctx, Vertex, vertices.len, .{ .transfer_src_bit = true });
+    pub fn uploadData(
+        vk_ctx: *const VulkanContext,
+        comptime T: type,
+        data: []const T,
+        command_pool: vk.CommandPool,
+        buffer: vk.Buffer,
+        memory: vk.DeviceMemory,
+    ) !void {
+        const staging_buffer, const staging_memory = try createBuffer(vk_ctx, T, data.len, .{ .transfer_src_bit = true });
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
 
-        const data = try vk_ctx.device.mapMemory(staging_memory, 0, vertices.len, .{});
-        const gpu_vertices: [*]Vertex = @ptrCast(@alignCast(data));
-        @memcpy(gpu_vertices, vertices[0..]);
+        const host_data = try vk_ctx.device.mapMemory(staging_memory, 0, data.len, .{});
+        const gpu_data: [*]T = @ptrCast(@alignCast(host_data));
+        @memcpy(gpu_data, data[0..]);
         vk_ctx.device.unmapMemory(staging_memory);
 
         try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
-        try vk_ctx.device.bindBufferMemory(self.buffer, self.memory, 0);
-        try copyBuffer(vk_ctx, self.command_pool, staging_buffer, self.buffer, vertices.len * @sizeOf(Vertex));
+        try vk_ctx.device.bindBufferMemory(buffer, memory, 0);
+        try copyBuffer(vk_ctx, command_pool, staging_buffer, buffer, data.len * @sizeOf(T));
     }
 
     fn copyBuffer(vk_ctx: *const VulkanContext, command_pool: vk.CommandPool, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
