@@ -52,6 +52,7 @@ pub fn main() !void {
             .color = color,
         };
     }
+    const indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
 
     // vulkan
     const vk_ctx = try vkr.VulkanContext.init(allocator, wl_ctx);
@@ -61,6 +62,7 @@ pub fn main() !void {
         @intCast(wl_ctx.width),
         @intCast(wl_ctx.height),
         &vkVertices,
+        &indices,
     );
     defer renderer.deinit(allocator, &vk_ctx);
 

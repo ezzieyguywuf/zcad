@@ -23,8 +23,9 @@ pub const Renderer = struct {
     width: u32,
     height: u32,
     n_vertices: u32,
+    n_indices: u32,
 
-    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32, vertices: []const Vertex) !Renderer {
+    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32, vertices: []const Vertex, indices: []const u32) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
@@ -51,14 +52,17 @@ pub const Renderer = struct {
             vertices.len,
             .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         );
+        try Renderer.uploadData(vk_ctx, Vertex, vertices, command_pool, vertex_buffer, vertex_memory);
+
         const index_buffer, const index_memory = try createBuffer(
             vk_ctx,
-            Vertex,
-            vertices.len,
-            .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+            u32,
+            indices.len,
+            .{ .transfer_dst_bit = true, .index_buffer_bit = true },
         );
+        try Renderer.uploadData(vk_ctx, u32, indices, command_pool, index_buffer, index_memory);
+
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
-        try Renderer.uploadData(vk_ctx, Vertex, vertices, command_pool, vertex_buffer, vertex_memory);
 
         var renderer = Renderer{
             .swapchain = swapchain,
@@ -74,6 +78,7 @@ pub const Renderer = struct {
             .width = width,
             .height = height,
             .n_vertices = @intCast(vertices.len),
+            .n_indices = @intCast(indices.len),
         };
 
         try renderer.createCommandBuffers(
@@ -154,7 +159,8 @@ pub const Renderer = struct {
             device.cmdBindPipeline(cmdbuf, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
             device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
-            device.cmdDraw(cmdbuf, self.n_vertices, 1, 0, 0);
+            device.cmdBindIndexBuffer(cmdbuf, self.index_buffer, 0, vk.IndexType.uint32);
+            device.cmdDrawIndexed(cmdbuf, self.n_indices, 1, 0, 0, 0);
 
             device.cmdEndRenderPass(cmdbuf);
             try device.endCommandBuffer(cmdbuf);
