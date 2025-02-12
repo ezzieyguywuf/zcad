@@ -16,6 +16,10 @@
             .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.304.tar.gz",
             .hash = "1220e439f44d3a6ce1112d00d3002cb442f3806f8674dbbeb941398a2ec03e717c8f",
         },
+        .zmath = .{
+            .url = "https://github.com/zig-gamedev/zmath/archive/main.tar.gz",
+            .hash = "1220c1ab7d1e49106f59c6adb4004befdb95525a72056364a663757aaa1365aae64a",
+        },
     },
 
     .paths = .{

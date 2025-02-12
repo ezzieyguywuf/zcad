@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
 const wl = @import("WaylandClient.zig");
+const zm = @import("zmath");
 const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
@@ -12,14 +13,22 @@ const frag_spv align(@alignOf(u32)) = @embedFile("fragment_shader").*;
 pub const Renderer = struct {
     swapchain: Swapchain,
     render_pass: vk.RenderPass,
-    framebuffers: []vk.Framebuffer,
+    pipeline_layout: vk.PipelineLayout,
     pipeline: vk.Pipeline,
     command_pool: vk.CommandPool,
+    descriptor_pool: vk.DescriptorPool,
+    framebuffers: []vk.Framebuffer,
+    command_buffers: []vk.CommandBuffer,
+    descriptor_sets: []vk.DescriptorSet,
+
     vertex_buffer: vk.Buffer,
     vertex_memory: vk.DeviceMemory,
     index_buffer: vk.Buffer,
     index_memory: vk.DeviceMemory,
-    command_buffers: []vk.CommandBuffer,
+    uniform_buffers: []vk.Buffer,
+    uniform_buffer_memories: []vk.DeviceMemory,
+    uniform_buffer_mapped_memories: []*MVPUniformBufferObject,
+
     width: u32,
     height: u32,
     n_vertices: u32,
@@ -30,11 +39,14 @@ pub const Renderer = struct {
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
+        const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
 
+        const descriptor_set_layout = try setupDescriptors(vk_ctx);
+        defer vk_ctx.device.destroyDescriptorSetLayout(descriptor_set_layout, null);
         const pipeline_layout_create_info = vk.PipelineLayoutCreateInfo{
             .flags = .{},
-            .set_layout_count = 0,
-            .p_set_layouts = undefined,
+            .set_layout_count = 1,
+            .p_set_layouts = &.{descriptor_set_layout},
             .push_constant_range_count = 0,
             .p_push_constant_ranges = undefined,
         };
@@ -62,26 +74,60 @@ pub const Renderer = struct {
         );
         try Renderer.uploadData(vk_ctx, u32, indices, command_pool, index_buffer, index_memory);
 
-        const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
+        const descriptor_pool_size = vk.DescriptorPoolSize{
+            .type = .uniform_buffer,
+            .descriptor_count = @intCast(framebuffers.len),
+        };
+        const descriptor_pool_create_info = vk.DescriptorPoolCreateInfo{
+            .pool_size_count = 1,
+            .p_pool_sizes = &.{descriptor_pool_size},
+            .max_sets = @intCast(framebuffers.len),
+        };
+        const descriptor_pool = try vk_ctx.device.createDescriptorPool(&descriptor_pool_create_info, null);
+
+        const descriptor_set_layouts = try allocator.alloc(vk.DescriptorSetLayout, framebuffers.len);
+        @memset(descriptor_set_layouts, descriptor_set_layout);
+        defer allocator.free(descriptor_set_layouts);
+        const descriptor_set_allocate_info = vk.DescriptorSetAllocateInfo{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = @intCast(descriptor_set_layouts.len),
+            .p_set_layouts = descriptor_set_layouts.ptr,
+        };
+        const descriptor_sets = try allocator.alloc(vk.DescriptorSet, framebuffers.len);
+        try vk_ctx.device.allocateDescriptorSets(&descriptor_set_allocate_info, descriptor_sets.ptr);
+        std.debug.print("descriptor_sets: {any}\n", .{descriptor_sets});
 
         var renderer = Renderer{
             .swapchain = swapchain,
             .render_pass = render_pass,
             .framebuffers = framebuffers,
+            .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
             .command_pool = command_pool,
+            .descriptor_pool = descriptor_pool,
             .vertex_buffer = vertex_buffer,
             .vertex_memory = vertex_memory,
             .index_buffer = index_buffer,
             .index_memory = index_memory,
             .command_buffers = command_buffers,
+            .descriptor_sets = descriptor_sets,
             .width = width,
             .height = height,
             .n_vertices = @intCast(vertices.len),
             .n_indices = @intCast(indices.len),
+            .uniform_buffers = undefined,
+            .uniform_buffer_memories = undefined,
+            .uniform_buffer_mapped_memories = undefined,
         };
 
-        try renderer.createCommandBuffers(
+        // note: these bits need to explicitly go _after_ the renderer has been
+        // initialized above - they rely on the state that is already stored.
+        // The alternative would be to add many input parameters to these
+        // helpers. Since we have finished init'ing yet, I figured it's ok to
+        // leave some member variables `undefined` above and init them in these
+        // helpers
+        try renderer.createUniformBuffers(allocator, vk_ctx, framebuffers.len);
+        renderer.command_buffers = try renderer.createCommandBuffers(
             allocator,
             &vk_ctx.device,
             .{ .width = @intCast(width), .height = @intCast(height) },
@@ -93,12 +139,23 @@ pub const Renderer = struct {
     pub fn deinit(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) void {
         self.swapchain.deinit(allocator, vk_ctx);
         vk_ctx.device.destroyRenderPass(self.render_pass, null);
+        for (self.uniform_buffers, self.uniform_buffer_memories) |uniform_buffer, uniform_buffer_memory| {
+            vk_ctx.device.destroyBuffer(uniform_buffer, null);
+            vk_ctx.device.unmapMemory(uniform_buffer_memory);
+            vk_ctx.device.freeMemory(uniform_buffer_memory, null);
+        }
         vk_ctx.device.destroyPipeline(self.pipeline, null);
         vk_ctx.device.destroyCommandPool(self.command_pool, null);
+        vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
         vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
         vk_ctx.device.freeMemory(self.vertex_memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
+
         allocator.free(self.command_buffers);
+        allocator.free(self.uniform_buffers);
+        allocator.free(self.uniform_buffer_memories);
+        allocator.free(self.uniform_buffer_mapped_memories);
+        allocator.free(self.descriptor_sets);
     }
 
     pub fn createCommandBuffers(
@@ -106,17 +163,17 @@ pub const Renderer = struct {
         allocator: std.mem.Allocator,
         device: *const VulkanContext.Device,
         extent: vk.Extent2D,
-    ) !void {
-        self.command_buffers = try allocator.alloc(vk.CommandBuffer, self.framebuffers.len);
-        errdefer allocator.free(self.command_buffers);
+    ) ![]vk.CommandBuffer {
+        const command_buffers = try allocator.alloc(vk.CommandBuffer, self.framebuffers.len);
+        errdefer allocator.free(command_buffers);
 
         const command_buffer_allocate_info = vk.CommandBufferAllocateInfo{
             .command_pool = self.command_pool,
             .level = .primary,
-            .command_buffer_count = @intCast(self.command_buffers.len),
+            .command_buffer_count = @intCast(command_buffers.len),
         };
-        try device.allocateCommandBuffers(&command_buffer_allocate_info, self.command_buffers.ptr);
-        errdefer device.freeCommandBuffers(self.command_pool, @intCast(self.command_buffers.len), self.command_buffers.ptr);
+        try device.allocateCommandBuffers(&command_buffer_allocate_info, command_buffers.ptr);
+        errdefer device.freeCommandBuffers(self.command_pool, @intCast(command_buffers.len), command_buffers.ptr);
 
         const clear = vk.ClearValue{
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
@@ -136,11 +193,15 @@ pub const Renderer = struct {
             .extent = extent,
         };
 
-        for (self.command_buffers, self.framebuffers) |cmdbuf, framebuffer| {
-            try device.beginCommandBuffer(cmdbuf, &.{});
+        for (
+            command_buffers,
+            self.framebuffers,
+            self.descriptor_sets,
+        ) |command_buffer, framebuffer, descriptor_set| {
+            try device.beginCommandBuffer(command_buffer, &.{});
 
-            device.cmdSetViewport(cmdbuf, 0, 1, @ptrCast(&viewport));
-            device.cmdSetScissor(cmdbuf, 0, 1, @ptrCast(&scissor));
+            device.cmdSetViewport(command_buffer, 0, 1, @ptrCast(&viewport));
+            device.cmdSetScissor(command_buffer, 0, 1, @ptrCast(&scissor));
 
             // This needs to be a separate definition - see https://github.com/ziglang/zig/issues/7627.
             const render_area = vk.Rect2D{
@@ -148,7 +209,7 @@ pub const Renderer = struct {
                 .extent = extent,
             };
 
-            device.cmdBeginRenderPass(cmdbuf, &.{
+            device.cmdBeginRenderPass(command_buffer, &.{
                 .render_pass = self.render_pass,
                 .framebuffer = framebuffer,
                 .render_area = render_area,
@@ -156,15 +217,95 @@ pub const Renderer = struct {
                 .p_clear_values = @ptrCast(&clear),
             }, .@"inline");
 
-            device.cmdBindPipeline(cmdbuf, .graphics, self.pipeline);
+            device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
-            device.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
-            device.cmdBindIndexBuffer(cmdbuf, self.index_buffer, 0, vk.IndexType.uint32);
-            device.cmdDrawIndexed(cmdbuf, self.n_indices, 1, 0, 0, 0);
+            device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
+            device.cmdBindIndexBuffer(command_buffer, self.index_buffer, 0, vk.IndexType.uint32);
+            device.cmdBindDescriptorSets(
+                command_buffer,
+                .graphics,
+                self.pipeline_layout,
+                0,
+                1,
+                &.{descriptor_set},
+                0,
+                null,
+            );
+            device.cmdDrawIndexed(command_buffer, self.n_indices, 1, 0, 0, 0);
 
-            device.cmdEndRenderPass(cmdbuf);
-            try device.endCommandBuffer(cmdbuf);
+            device.cmdEndRenderPass(command_buffer);
+            try device.endCommandBuffer(command_buffer);
         }
+
+        return command_buffers;
+    }
+
+    fn createUniformBuffers(
+        self: *Renderer,
+        allocator: std.mem.Allocator,
+        vk_ctx: *const VulkanContext,
+        n_frames: usize,
+    ) !void {
+        self.uniform_buffers = try allocator.alloc(vk.Buffer, n_frames);
+        self.uniform_buffer_memories = try allocator.alloc(vk.DeviceMemory, n_frames);
+        self.uniform_buffer_mapped_memories = try allocator.alloc(*MVPUniformBufferObject, n_frames);
+        // std.debug.print("buffer size is {d}\n", .{buffer_size});
+        for (0..n_frames) |i| {
+            self.uniform_buffers[i], self.uniform_buffer_memories[i] = try createBuffer(
+                vk_ctx,
+                MVPUniformBufferObject,
+                1,
+                .{ .uniform_buffer_bit = true },
+            );
+            const host_data = try vk_ctx.device.mapMemory(self.uniform_buffer_memories[i], 0, 1, .{});
+            // gpu_data
+            self.uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(host_data));
+            try vk_ctx.device.bindBufferMemory(
+                self.uniform_buffers[i],
+                self.uniform_buffer_memories[i],
+                0,
+            );
+
+            const descriptor_buffer_info = vk.DescriptorBufferInfo{
+                .buffer = self.uniform_buffers[i],
+                .offset = 0,
+                .range = @sizeOf(MVPUniformBufferObject),
+            };
+            // Since p_image_info and p_texel_buffer aren't implemented by
+            // vulkav-zig as `?[*]....`, we _have_ to specify something, so here
+            // goes.
+            const descriptor_image_info = vk.DescriptorImageInfo{
+                .sampler = .null_handle,
+                .image_view = .null_handle,
+                .image_layout = .undefined,
+            };
+            const write_descriptor_set = vk.WriteDescriptorSet{
+                .dst_set = self.descriptor_sets[i],
+                .dst_binding = 0,
+                .dst_array_element = 0,
+                .descriptor_type = .uniform_buffer,
+                .descriptor_count = 1,
+                .p_buffer_info = &.{descriptor_buffer_info},
+                .p_image_info = &.{descriptor_image_info},
+                .p_texel_buffer_view = &.{.null_handle},
+            };
+            vk_ctx.device.updateDescriptorSets(1, &.{write_descriptor_set}, 0, null);
+        }
+    }
+
+    pub fn setupDescriptors(vk_ctx: *const VulkanContext) !vk.DescriptorSetLayout {
+        const uniform_binding = vk.DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptor_type = vk.DescriptorType.uniform_buffer,
+            .descriptor_count = 1,
+            .stage_flags = .{ .vertex_bit = true },
+        };
+
+        const descriptor_set_layout_create_info = vk.DescriptorSetLayoutCreateInfo{
+            .binding_count = 1,
+            .p_bindings = &.{uniform_binding},
+        };
+        return try vk_ctx.device.createDescriptorSetLayout(&descriptor_set_layout_create_info, null);
     }
 
     pub fn createMemory(vk_ctx: *const VulkanContext, buffer: vk.Buffer) !vk.DeviceMemory {
@@ -258,9 +399,17 @@ pub const Renderer = struct {
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
     }
 
-    pub fn render(self: *Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, wl_ctx: *const wl.WaylandContext) !void {
+    pub fn render(
+        self: *Renderer,
+        allocator: std.mem.Allocator,
+        vk_ctx: *const VulkanContext,
+        wl_ctx: *const wl.WaylandContext,
+        mvp_ubo: *const MVPUniformBufferObject,
+    ) !void {
         const command_buffer = self.command_buffers[self.swapchain.current_image_index];
-
+        const gpu_data: [*]MVPUniformBufferObject = @ptrCast(@alignCast(self.uniform_buffer_mapped_memories[self.swapchain.current_image_index]));
+        const data = [1]MVPUniformBufferObject{mvp_ubo.*};
+        @memcpy(gpu_data, &data);
         const state = self.swapchain.present(vk_ctx, command_buffer) catch |err| switch (err) {
             error.OutOfDateKHR => Swapchain.PresentState.suboptimal,
             else => |narrow| return narrow,
@@ -286,7 +435,7 @@ pub const Renderer = struct {
             //     .sharing_mode = .exclusive,
             // };
             // self.buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
-            try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
+            self.command_buffers = try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
         }
     }
 };
@@ -603,7 +752,7 @@ pub const VulkanContext = struct {
             .depth_clamp_enable = vk.FALSE,
             .rasterizer_discard_enable = vk.FALSE,
             .polygon_mode = .fill,
-            .cull_mode = .{ .back_bit = true },
+            .cull_mode = .{ .back_bit = false },
             .front_face = .clockwise,
             .depth_bias_enable = vk.FALSE,
             .depth_bias_constant_factor = 0,
@@ -968,6 +1117,12 @@ const SwapImage = struct {
     }
 };
 
+pub const MVPUniformBufferObject = struct {
+    model: zm.Mat,
+    view: zm.Mat,
+    projection: zm.Mat,
+};
+
 pub const Vertex = struct {
     const binding_description = vk.VertexInputBindingDescription{
         .binding = 0,
@@ -992,6 +1147,10 @@ pub const Vertex = struct {
 
     pos: [3]f32,
     color: [3]f32,
+
+    pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });
+    }
 };
 
 fn debugCallback(

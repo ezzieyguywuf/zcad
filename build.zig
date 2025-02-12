@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zmath = b.dependency("zmath", .{});
     const scanner = Scanner.create(b, .{});
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
@@ -27,6 +28,7 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addImport("wayland", wayland);
     exe.root_module.addImport("vulkan", vulkan);
+    exe.root_module.addImport("zmath", zmath.module("root"));
 
     // TODO: do this.
     // if (b.systemIntegrationOption("zcad", .{})) {

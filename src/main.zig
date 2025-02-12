@@ -2,6 +2,7 @@ const std = @import("std");
 const wl = @import("WaylandClient.zig");
 const vkr = @import("VulkanRenderer.zig");
 const vk = @import("vulkan");
+const zm = @import("zmath");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -33,7 +34,7 @@ pub fn main() !void {
         .{ .x = 5, .y = 5, .z = 0 },
         .{ .x = -5, .y = 5, .z = 0 },
     };
-    const scale: f32 = 10;
+    const scale: f32 = 1.0;
     var vkVertices = std.mem.zeroes([points.len]vkr.Vertex);
 
     for (points, 0..) |point, i| {
@@ -66,11 +67,29 @@ pub fn main() !void {
     );
     defer renderer.deinit(allocator, &vk_ctx);
 
+    const start = std.time.milliTimestamp();
+    var aspect_ratio: f32 = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
     while (!wl_ctx.should_exit) {
         const should_render = try wl_ctx.run();
         if (!should_render) continue;
+        if (wl_ctx.should_resize) {
+            aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+        }
+        const now = std.time.milliTimestamp();
+        const delta = @as(f32, @floatFromInt(now - start)) / 1000;
+        const axis = zm.Vec{ 0, 1, 0, 0 };
+        const angle = std.math.pi * delta / 3;
+        const mvp_ubo = vkr.MVPUniformBufferObject{
+            .model = zm.matFromAxisAngle(axis, angle),
+            .view = zm.lookAtRh(
+                .{ 0, 0, 20, 1 }, // eye
+                .{ 0, 0, 0, 1 }, // focus point
+                .{ 0, 1, 0, 0 }, // 'up', last value is 0  this is a vector not a point
+            ),
+            .projection = zm.perspectiveFovRh(std.math.pi / 4.0, aspect_ratio, 0.1, 20.0),
+        };
 
-        try renderer.render(allocator, &vk_ctx, wl_ctx);
+        try renderer.render(allocator, &vk_ctx, wl_ctx, &mvp_ubo);
     }
 
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);
