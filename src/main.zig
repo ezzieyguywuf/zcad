@@ -86,7 +86,7 @@ pub fn main() !void {
                 .{ 0, 0, 0, 1 }, // focus point
                 .{ 0, 1, 0, 0 }, // 'up', last value is 0  this is a vector not a point
             ),
-            .projection = zm.perspectiveFovRh(std.math.pi / 4.0, aspect_ratio, 0.1, 20.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / 4.0, aspect_ratio, 0.01, 100.0),
         };
 
         try renderer.render(allocator, &vk_ctx, wl_ctx, &mvp_ubo);
