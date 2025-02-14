@@ -13,12 +13,16 @@ const AppContext = struct {
 pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
     const delta_angle = std.math.pi / @as(f32, 9);
     if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
+        std.debug.print("LEFT CLICK\n", .{});
         app_ctx.angle += delta_angle;
     }
     if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
+        std.debug.print("RIGHT CLICK\n", .{});
         app_ctx.angle -= delta_angle;
     }
-    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
+    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {
+        std.debug.print("MIDDLE CLICK\n", .{});
+    }
     app_ctx.prev_input_state = input_state;
 
     if (app_ctx.angle > 0.001 or app_ctx.angle < -0.001) {

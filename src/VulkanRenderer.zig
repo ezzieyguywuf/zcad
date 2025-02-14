@@ -751,7 +751,7 @@ pub const VulkanContext = struct {
         const pipeline_rasterization_state_create_info = vk.PipelineRasterizationStateCreateInfo{
             .depth_clamp_enable = vk.FALSE,
             .rasterizer_discard_enable = vk.FALSE,
-            .polygon_mode = .fill,
+            .polygon_mode = .line,
             .cull_mode = .{ .back_bit = false },
             .front_face = .clockwise,
             .depth_bias_enable = vk.FALSE,

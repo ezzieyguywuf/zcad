@@ -16,7 +16,7 @@ const WaylandGlobals = struct {
     zxdg_decoration_manager_v1: ?*zxdg.DecorationManagerV1 = null,
 };
 
-pub const InputState = struct {
+pub const InputState = packed struct {
     left_button: bool = false,
     middle_button: bool = false,
     right_button: bool = false,
@@ -28,11 +28,11 @@ pub fn WaylandContext(comptime T: type) type {
     return struct {
         callback: CallbackType,
         t: T,
-        should_exit: bool = false,
-        should_resize: bool = false,
-        ready_to_resize: bool = false,
-        width: i32 = 0,
-        height: i32 = 0,
+        should_exit: bool,
+        should_resize: bool,
+        ready_to_resize: bool,
+        width: i32,
+        height: i32,
 
         wl_display: *wl.Display,
         wl_registry: *wl.Registry,
@@ -45,12 +45,9 @@ pub fn WaylandContext(comptime T: type) type {
         seat: *wl.Seat,
         wm_base: *xdg.WmBase,
 
-        pointer_in_flight: InputState = .{},
+        pointer_in_flight: InputState,
 
         pub fn init(self: *WaylandContext(T), t: T, callback: CallbackType, width: i32, height: i32) !void {
-            self.t = t;
-            self.callback = callback;
-
             const display = try wl.Display.connect(null);
             const registry = try display.getRegistry();
 
@@ -69,17 +66,26 @@ pub fn WaylandContext(comptime T: type) type {
             const surface = try wl_compositor.createSurface();
             const xdg_surface = try wm_base.getXdgSurface(surface);
             const xdg_toplevel = try xdg_surface.getToplevel();
-            self.wl_display = display;
-            self.wl_registry = registry;
-            self.wl_pointer = wl_globals.pointer orelse return error.NoWlPointer;
-            self.compositor = wl_compositor;
-            self.wm_base = wm_base;
-            self.seat = seat;
-            self.width = width;
-            self.height = height;
-            self.wl_surface = surface;
-            self.xdg_surface = xdg_surface;
-            self.xdg_toplevel = xdg_toplevel;
+
+            self.* = .{
+                .t = t,
+                .callback = callback,
+                .wl_display = display,
+                .wl_registry = registry,
+                .wl_pointer = wl_globals.pointer orelse return error.NoWlPointer,
+                .compositor = wl_compositor,
+                .wm_base = wm_base,
+                .seat = seat,
+                .width = width,
+                .height = height,
+                .wl_surface = surface,
+                .xdg_surface = xdg_surface,
+                .xdg_toplevel = xdg_toplevel,
+                .pointer_in_flight = .{},
+                .should_exit = false,
+                .ready_to_resize = false,
+                .should_resize = false,
+            };
 
             self.wl_pointer.setListener(*WaylandContext(T), pointerListener, self);
             if (display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
