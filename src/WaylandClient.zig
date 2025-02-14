@@ -16,7 +16,7 @@ const WaylandGlobals = struct {
     zxdg_decoration_manager_v1: ?*zxdg.DecorationManagerV1 = null,
 };
 
-pub const InputState = packed struct {
+pub const InputState = struct {
     left_button: bool = false,
     middle_button: bool = false,
     right_button: bool = false,
