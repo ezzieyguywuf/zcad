@@ -4,6 +4,29 @@ const vkr = @import("VulkanRenderer.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
 
+const AppContext = struct {
+    prev_input_state: wl.InputState,
+    angle: f32,
+    mvp_ubo: vkr.MVPUniformBufferObject,
+};
+
+pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
+    const delta_angle = std.math.pi / @as(f32, 9);
+    if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
+        app_ctx.angle += delta_angle;
+    }
+    if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
+        app_ctx.angle -= delta_angle;
+    }
+    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
+    app_ctx.prev_input_state = input_state;
+
+    if (app_ctx.angle > 0.001 or app_ctx.angle < -0.001) {
+        const axis = zm.Vec{ 0, 1, 0, 0 };
+        app_ctx.mvp_ubo.model = zm.matFromAxisAngle(axis, app_ctx.angle);
+    }
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -22,10 +45,24 @@ pub fn main() !void {
 
     try bw.flush(); // Don't forget to flush!
 
+    var app_ctx = AppContext{
+        .prev_input_state = wl.InputState{},
+        .angle = 0,
+        .mvp_ubo = .{
+            .model = zm.identity(),
+            .view = zm.lookAtRh(
+                .{ 0, 0, 20, 1 }, // eye
+                .{ 0, 0, 0, 1 }, // focus point
+                .{ 0, 1, 0, 0 }, // 'up', last value is 0  this is a vector not a point
+            ),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 100.0),
+        },
+    };
+
     // Wayland
-    var wl_ctx = try allocator.create(wl.WaylandContext);
+    var wl_ctx = try allocator.create(wl.WaylandContext(*AppContext));
     defer allocator.destroy(wl_ctx);
-    try wl.WaylandContext.init(wl_ctx, 680, 420);
+    try wl_ctx.init(&app_ctx, InputCallback, 680, 420);
 
     // zcad
     const points = [_]Point{
@@ -56,7 +93,11 @@ pub fn main() !void {
     const indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
 
     // vulkan
-    const vk_ctx = try vkr.VulkanContext.init(allocator, wl_ctx);
+    const vk_ctx = try vkr.VulkanContext.init(
+        allocator,
+        @ptrCast(wl_ctx.wl_display),
+        @ptrCast(wl_ctx.wl_surface),
+    );
     var renderer = try vkr.Renderer.init(
         allocator,
         &vk_ctx,
@@ -67,29 +108,25 @@ pub fn main() !void {
     );
     defer renderer.deinit(allocator, &vk_ctx);
 
-    const start = std.time.milliTimestamp();
-    var aspect_ratio: f32 = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+    {
+        const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
+    }
     while (!wl_ctx.should_exit) {
         const should_render = try wl_ctx.run();
         if (!should_render) continue;
         if (wl_ctx.should_resize) {
-            aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+            const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
         }
-        const now = std.time.milliTimestamp();
-        const delta = @as(f32, @floatFromInt(now - start)) / 1000;
-        const axis = zm.Vec{ 0, 1, 0, 0 };
-        const angle = std.math.pi * delta / 3;
-        const mvp_ubo = vkr.MVPUniformBufferObject{
-            .model = zm.matFromAxisAngle(axis, angle),
-            .view = zm.lookAtRh(
-                .{ 0, 0, 20, 1 }, // eye
-                .{ 0, 0, 0, 1 }, // focus point
-                .{ 0, 1, 0, 0 }, // 'up', last value is 0  this is a vector not a point
-            ),
-            .projection = zm.perspectiveFovRh(std.math.pi / 4.0, aspect_ratio, 0.01, 100.0),
-        };
 
-        try renderer.render(allocator, &vk_ctx, wl_ctx, &mvp_ubo);
+        try renderer.render(
+            allocator,
+            &vk_ctx,
+            @intCast(wl_ctx.width),
+            @intCast(wl_ctx.height),
+            &app_ctx.mvp_ubo,
+        );
     }
 
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);

@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
     scanner.addSystemProtocol("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml");
     scanner.generate("wl_compositor", 1);
+    scanner.generate("wl_seat", 7);
     scanner.generate("xdg_wm_base", 1);
     scanner.generate("zxdg_decoration_manager_v1", 1);
 

@@ -95,7 +95,6 @@ pub const Renderer = struct {
         };
         const descriptor_sets = try allocator.alloc(vk.DescriptorSet, framebuffers.len);
         try vk_ctx.device.allocateDescriptorSets(&descriptor_set_allocate_info, descriptor_sets.ptr);
-        std.debug.print("descriptor_sets: {any}\n", .{descriptor_sets});
 
         var renderer = Renderer{
             .swapchain = swapchain,
@@ -403,7 +402,8 @@ pub const Renderer = struct {
         self: *Renderer,
         allocator: std.mem.Allocator,
         vk_ctx: *const VulkanContext,
-        wl_ctx: *const wl.WaylandContext,
+        window_width: u32,
+        window_height: u32,
         mvp_ubo: *const MVPUniformBufferObject,
     ) !void {
         const command_buffer = self.command_buffers[self.swapchain.current_image_index];
@@ -415,9 +415,9 @@ pub const Renderer = struct {
             else => |narrow| return narrow,
         };
 
-        if (state == .suboptimal or self.width != @as(u32, @intCast(wl_ctx.width)) or self.height != @as(u32, @intCast(wl_ctx.height))) {
-            self.width = @intCast(wl_ctx.width);
-            self.height = @intCast(wl_ctx.height);
+        if (state == .suboptimal or self.width != window_width or self.height != window_height) {
+            self.width = window_width;
+            self.height = window_height;
             const extent = vk.Extent2D{ .width = self.width, .height = self.height };
             try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
             try vk_ctx.device.queueWaitIdle(vk_ctx.presentation_queue);
@@ -477,7 +477,7 @@ pub const VulkanContext = struct {
     graphics_queue: vk.Queue,
     presentation_queue: vk.Queue,
 
-    pub fn init(allocator: std.mem.Allocator, wl_ctx: *const wl.WaylandContext) !VulkanContext {
+    pub fn init(allocator: std.mem.Allocator, wl_display: *vk.wl_display, wl_surface: *vk.wl_surface) !VulkanContext {
         // TODO: try (again) to see if we can do this without linking vulkan and
         // importing the c-thing, e.g. can we do this in pure zig.
         const get_instance_proc_addr: vk.PfnGetInstanceProcAddr = @extern(vk.PfnGetInstanceProcAddr, .{
@@ -536,8 +536,8 @@ pub const VulkanContext = struct {
         defer instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
 
         const create_wayland_surface_info = vk.WaylandSurfaceCreateInfoKHR{
-            .display = @ptrCast(wl_ctx.display),
-            .surface = @ptrCast(wl_ctx.surface),
+            .display = wl_display,
+            .surface = wl_surface,
         };
         const surface = try instance.createWaylandSurfaceKHR(&create_wayland_surface_info, null);
         errdefer instance.destroySurfaceKHR(surface, null);
