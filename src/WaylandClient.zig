@@ -50,6 +50,7 @@ pub fn WaylandContext(comptime T: type) type {
         wm_base: *xdg.WmBase,
 
         input_state_in_flight: InputState,
+        window_moving: bool,
 
         pub fn init(self: *WaylandContext(T), t: T, callback: CallbackType, width: i32, height: i32) !void {
             const display = try wl.Display.connect(null);
@@ -86,6 +87,7 @@ pub fn WaylandContext(comptime T: type) type {
                 .xdg_surface = xdg_surface,
                 .xdg_toplevel = xdg_toplevel,
                 .input_state_in_flight = .{},
+                .window_moving = false,
                 .should_exit = false,
                 .ready_to_resize = false,
                 .should_resize = false,
@@ -210,15 +212,32 @@ pub fn WaylandContext(comptime T: type) type {
                     ctx.input_state_in_flight.pointer_y = motion.surface_y.toDouble();
                 },
                 .frame => {
-                    // std.debug.print("FULL FRAME, x: {d:3} y: {d:3}\n", .{
-                    //     ctx.input_state_in_flight.pointer_x,
-                    //     ctx.input_state_in_flight.pointer_y,
-                    // });
-                    if (ctx.input_state_in_flight.pointer_y <= 5) {
-                        ctx.xdg_toplevel.move(ctx.wl_seat, ctx.input_state_in_flight.left_button_serial);
+                    std.debug.print("FULL FRAME, window_moving: {any}, x: {d:3} y: {d:3}\n", .{
+                        ctx.window_moving,
+                        ctx.input_state_in_flight.pointer_x,
+                        ctx.input_state_in_flight.pointer_y,
+                    });
+                    const x = ctx.input_state_in_flight.pointer_x;
+                    const y = ctx.input_state_in_flight.pointer_y;
+                    if (ctx.window_moving and ctx.input_state_in_flight.left_button == false) {
+                        ctx.window_moving = false;
                     }
+                    if (x > 5 and y <= 10) {
+                        ctx.window_moving = true;
+                        ctx.xdg_toplevel.move(
+                            ctx.wl_seat,
+                            ctx.input_state_in_flight.left_button_serial,
+                        );
+                    }
+                    if (!ctx.window_moving and (x < 5 and y <= 5)) {
+                        ctx.xdg_toplevel.resize(
+                            ctx.wl_seat,
+                            ctx.input_state_in_flight.left_button_serial,
+                            .top_left,
+                        );
+                    }
+
                     try ctx.callback(ctx.t, ctx.input_state_in_flight);
-                    ctx.input_state_in_flight = InputState{};
                 },
                 else => {},
             }
