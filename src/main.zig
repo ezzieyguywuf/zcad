@@ -7,23 +7,40 @@ const zm = @import("zmath");
 const AppContext = struct {
     prev_input_state: wl.InputState,
     angle: f32,
+    eye: zm.Vec,
+    focus_point: zm.Vec,
+    up: zm.Vec,
     mvp_ubo: vkr.MVPUniformBufferObject,
 };
 
 pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
     const delta_angle = std.math.pi / @as(f32, 9);
     if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
-        std.debug.print("LEFT CLICK\n", .{});
         app_ctx.angle += delta_angle;
     }
     if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
-        std.debug.print("RIGHT CLICK\n", .{});
         app_ctx.angle -= delta_angle;
     }
-    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {
-        std.debug.print("MIDDLE CLICK\n", .{});
-    }
+    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
+
+    const total_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
     app_ctx.prev_input_state = input_state;
+    app_ctx.prev_input_state.vertical_scroll = total_scroll;
+
+    const delta_zoom: ?f64 = if (total_scroll > 1 or total_scroll < -1) total_scroll else null;
+    if (delta_zoom) |amt| {
+        std.debug.print("eye: ({d:3}, {d:3}, {d:3})\n", .{ app_ctx.eye[0], app_ctx.eye[1], app_ctx.eye[2] });
+        const dir_long = app_ctx.focus_point - app_ctx.eye;
+        std.debug.print("  dir_long: ({d:3}, {d:3}, {d:3})\n", .{ dir_long[0], dir_long[1], dir_long[2] });
+        const dir_len = zm.length3(dir_long)[0];
+        std.debug.print("  dir_len; {d:3}\n", .{dir_len});
+        const dir = zm.normalize3(app_ctx.focus_point - app_ctx.eye);
+        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(amt))) * dir;
+        app_ctx.prev_input_state.vertical_scroll = 0;
+        std.debug.print("  dir: ({d:3}, {d:3}, {d:3})\n", .{ dir[0], dir[1], dir[2] });
+        std.debug.print("  amt: {d:3}\n", .{amt});
+        std.debug.print("  eye: ({d:3}, {d:3}, {d:3})\n", .{ app_ctx.eye[0], app_ctx.eye[1], app_ctx.eye[2] });
+    }
 
     if (app_ctx.angle > 0.001 or app_ctx.angle < -0.001) {
         const axis = zm.Vec{ 0, 1, 0, 0 };
@@ -49,16 +66,18 @@ pub fn main() !void {
 
     try bw.flush(); // Don't forget to flush!
 
+    const eye: zm.Vec = .{ 0, 0, 20, 1 };
+    const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
+    const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
         .prev_input_state = wl.InputState{},
         .angle = 0,
+        .eye = eye,
+        .focus_point = focus_point,
+        .up = up,
         .mvp_ubo = .{
             .model = zm.identity(),
-            .view = zm.lookAtRh(
-                .{ 0, 0, 20, 1 }, // eye
-                .{ 0, 0, 0, 1 }, // focus point
-                .{ 0, 1, 0, 0 }, // 'up', last value is 0  this is a vector not a point
-            ),
+            .view = zm.lookAtRh(eye, focus_point, up),
             .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 100.0),
         },
     };

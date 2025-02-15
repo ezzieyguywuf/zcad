@@ -18,8 +18,12 @@ const WaylandGlobals = struct {
 
 pub const InputState = packed struct {
     left_button: bool = false,
+    left_button_serial: u32 = 0,
     middle_button: bool = false,
     right_button: bool = false,
+    vertical_scroll: f64 = 0,
+    pointer_x: f64 = 0,
+    pointer_y: f64 = 0,
 };
 
 pub fn WaylandContext(comptime T: type) type {
@@ -36,16 +40,16 @@ pub fn WaylandContext(comptime T: type) type {
 
         wl_display: *wl.Display,
         wl_registry: *wl.Registry,
+        wl_seat: *wl.Seat,
         wl_surface: *wl.Surface,
         wl_pointer: *wl.Pointer,
         xdg_surface: *xdg.Surface,
         xdg_toplevel: *xdg.Toplevel,
         zxdg_toplevel_decoration_v1: ?*zxdg.ToplevelDecorationV1 = null,
         compositor: *wl.Compositor,
-        seat: *wl.Seat,
         wm_base: *xdg.WmBase,
 
-        pointer_in_flight: InputState,
+        input_state_in_flight: InputState,
 
         pub fn init(self: *WaylandContext(T), t: T, callback: CallbackType, width: i32, height: i32) !void {
             const display = try wl.Display.connect(null);
@@ -56,11 +60,11 @@ pub fn WaylandContext(comptime T: type) type {
             if (display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
 
             const wl_compositor = wl_globals.compositor orelse return error.NoWlCompositor;
-            const seat = wl_globals.seat orelse return error.NoSeat;
+            const wl_seat = wl_globals.seat orelse return error.NoSeat;
             const wm_base = wl_globals.wm_base orelse return error.NoXdgWmBase;
             const zxdg_decoration_manager_v1 = wl_globals.zxdg_decoration_manager_v1 orelse null;
 
-            seat.setListener(*WaylandGlobals, seatListener, &wl_globals);
+            wl_seat.setListener(*WaylandGlobals, seatListener, &wl_globals);
             if (display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
 
             const surface = try wl_compositor.createSurface();
@@ -75,13 +79,13 @@ pub fn WaylandContext(comptime T: type) type {
                 .wl_pointer = wl_globals.pointer orelse return error.NoWlPointer,
                 .compositor = wl_compositor,
                 .wm_base = wm_base,
-                .seat = seat,
+                .wl_seat = wl_seat,
                 .width = width,
                 .height = height,
                 .wl_surface = surface,
                 .xdg_surface = xdg_surface,
                 .xdg_toplevel = xdg_toplevel,
-                .pointer_in_flight = .{},
+                .input_state_in_flight = .{},
                 .should_exit = false,
                 .ready_to_resize = false,
                 .should_resize = false,
@@ -185,16 +189,36 @@ pub fn WaylandContext(comptime T: type) type {
                         else => false,
                     };
                     switch (button.button) {
-                        c.BTN_LEFT => ctx.pointer_in_flight.left_button = state,
-                        c.BTN_RIGHT => ctx.pointer_in_flight.right_button = state,
-                        c.BTN_MIDDLE => ctx.pointer_in_flight.middle_button = state,
-                        else => std.debug.print("button {d}, state {s}\n", .{ button.button, if (state) "pressed" else "released" }),
+                        c.BTN_LEFT => {
+                            ctx.input_state_in_flight.left_button = state;
+                            ctx.input_state_in_flight.left_button_serial = button.serial;
+                        },
+                        c.BTN_RIGHT => ctx.input_state_in_flight.right_button = state,
+                        c.BTN_MIDDLE => ctx.input_state_in_flight.middle_button = state,
+                        else => std.debug.print("unrecognized button {d}, state {s}\n", .{ button.button, if (state) "pressed" else "released" }),
                     }
                 },
+                .axis => |axis| {
+                    switch (axis.axis) {
+                        .vertical_scroll => ctx.input_state_in_flight.vertical_scroll += axis.value.toDouble(),
+                        .horizontal_scroll => {},
+                        else => std.debug.print("unrecognized axis: {any}\n", .{axis}),
+                    }
+                },
+                .motion => |motion| {
+                    ctx.input_state_in_flight.pointer_x = motion.surface_x.toDouble();
+                    ctx.input_state_in_flight.pointer_y = motion.surface_y.toDouble();
+                },
                 .frame => {
-                    // std.debug.print("FULL FRAME: {any}\n", .{ctx.pointer_in_flight});
-                    try ctx.callback(ctx.t, ctx.pointer_in_flight);
-                    ctx.pointer_in_flight = InputState{};
+                    // std.debug.print("FULL FRAME, x: {d:3} y: {d:3}\n", .{
+                    //     ctx.input_state_in_flight.pointer_x,
+                    //     ctx.input_state_in_flight.pointer_y,
+                    // });
+                    if (ctx.input_state_in_flight.pointer_y <= 5) {
+                        ctx.xdg_toplevel.move(ctx.wl_seat, ctx.input_state_in_flight.left_button_serial);
+                    }
+                    try ctx.callback(ctx.t, ctx.input_state_in_flight);
+                    ctx.input_state_in_flight = InputState{};
                 },
                 else => {},
             }
