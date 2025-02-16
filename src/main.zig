@@ -11,17 +11,20 @@ const AppContext = struct {
     focus_point: zm.Vec,
     up: zm.Vec,
     mvp_ubo: vkr.MVPUniformBufferObject,
+    should_exit: bool,
 };
 
 pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
     const delta_angle = std.math.pi / @as(f32, 9);
-    if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
-        app_ctx.angle += delta_angle;
+    if ((!input_state.window_moving) and (!input_state.window_resizing)) {
+        if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
+            app_ctx.angle += delta_angle;
+        }
+        if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
+            app_ctx.angle -= delta_angle;
+        }
+        if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
     }
-    if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
-        app_ctx.angle -= delta_angle;
-    }
-    if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
 
     const total_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
     app_ctx.prev_input_state = input_state;
@@ -80,6 +83,7 @@ pub fn main() !void {
             .view = zm.lookAtRh(eye, focus_point, up),
             .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 100.0),
         },
+        .should_exit = false,
     };
 
     // Wayland
@@ -135,7 +139,7 @@ pub fn main() !void {
         const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
     }
-    while (!wl_ctx.should_exit) {
+    while ((!wl_ctx.should_exit) or (!app_ctx.should_exit)) {
         const should_render = try wl_ctx.run();
         if (!should_render) continue;
         if (wl_ctx.should_resize) {

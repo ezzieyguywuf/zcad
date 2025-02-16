@@ -24,6 +24,9 @@ pub const InputState = packed struct {
     vertical_scroll: f64 = 0,
     pointer_x: f64 = 0,
     pointer_y: f64 = 0,
+    window_moving: bool = false,
+    window_resizing: bool = false,
+    should_close: bool = false,
 };
 
 pub fn WaylandContext(comptime T: type) type {
@@ -50,7 +53,6 @@ pub fn WaylandContext(comptime T: type) type {
         wm_base: *xdg.WmBase,
 
         input_state_in_flight: InputState,
-        window_moving: bool,
 
         pub fn init(self: *WaylandContext(T), t: T, callback: CallbackType, width: i32, height: i32) !void {
             const display = try wl.Display.connect(null);
@@ -71,6 +73,7 @@ pub fn WaylandContext(comptime T: type) type {
             const surface = try wl_compositor.createSurface();
             const xdg_surface = try wm_base.getXdgSurface(surface);
             const xdg_toplevel = try xdg_surface.getToplevel();
+            xdg_toplevel.setTitle("zcad vulkan");
 
             self.* = .{
                 .t = t,
@@ -87,7 +90,6 @@ pub fn WaylandContext(comptime T: type) type {
                 .xdg_surface = xdg_surface,
                 .xdg_toplevel = xdg_toplevel,
                 .input_state_in_flight = .{},
-                .window_moving = false,
                 .should_exit = false,
                 .ready_to_resize = false,
                 .should_resize = false,
@@ -212,8 +214,9 @@ pub fn WaylandContext(comptime T: type) type {
                     ctx.input_state_in_flight.pointer_y = motion.surface_y.toDouble();
                 },
                 .frame => {
+                    const window_moving: bool = ctx.input_state_in_flight.window_moving;
                     // std.debug.print("FULL FRAME, window_moving: {any}, x: {d:3} y: {d:3}\n", .{
-                    //     ctx.window_moving,
+                    //     window_moving
                     //     ctx.input_state_in_flight.pointer_x,
                     //     ctx.input_state_in_flight.pointer_y,
                     // });
@@ -222,65 +225,69 @@ pub fn WaylandContext(comptime T: type) type {
                     const drag_size: f64 = 5;
                     const right_edge = @as(f64, @floatFromInt(ctx.width)) - drag_size;
                     const bottom_edge = @as(f64, @floatFromInt(ctx.height)) - drag_size;
-                    if (ctx.window_moving and ctx.input_state_in_flight.left_button == false) {
-                        ctx.window_moving = false;
+                    if (window_moving and ctx.input_state_in_flight.left_button == false) {
+                        ctx.input_state_in_flight.window_moving = false;
                     }
                     if (x > drag_size and y <= 10 and x < right_edge) {
-                        ctx.window_moving = true;
+                        ctx.input_state_in_flight.window_moving = true;
                         ctx.xdg_toplevel.move(
                             ctx.wl_seat,
                             ctx.input_state_in_flight.left_button_serial,
                         );
                     }
-                    if (!ctx.window_moving and (x < drag_size and y <= drag_size)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .top_left,
-                        );
-                    }
-                    if (!ctx.window_moving and (x > right_edge and y <= drag_size)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .top_right,
-                        );
-                    }
-                    if (!ctx.window_moving and (x > right_edge and y > bottom_edge)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .bottom_right,
-                        );
-                    }
-                    if (!ctx.window_moving and (x < drag_size and y > bottom_edge)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .bottom_left,
-                        );
-                    }
+                    if (!window_moving) {
+                        if (x < drag_size and y <= drag_size) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .top_left,
+                            );
+                        }
+                        if (x > right_edge and y <= drag_size) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .top_right,
+                            );
+                        }
+                        if (x > right_edge and y > bottom_edge) {
+                            ctx.input_state_in_flight.should_close = true;
+                        }
+                        if (x < drag_size and y > bottom_edge) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .bottom_left,
+                            );
+                        }
 
-                    if (!ctx.window_moving and (x < drag_size and y < bottom_edge and y > drag_size)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .left,
-                        );
-                    }
-                    if (!ctx.window_moving and (x > right_edge and y < bottom_edge and y > drag_size)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .right,
-                        );
-                    }
-                    if (!ctx.window_moving and (x > drag_size and x < right_edge and y > bottom_edge)) {
-                        ctx.xdg_toplevel.resize(
-                            ctx.wl_seat,
-                            ctx.input_state_in_flight.left_button_serial,
-                            .bottom,
-                        );
+                        if (x < drag_size and y < bottom_edge and y > drag_size) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .left,
+                            );
+                        }
+                        if (x > right_edge and y < bottom_edge and y > drag_size) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .right,
+                            );
+                        }
+                        if (x > drag_size and x < right_edge and y > bottom_edge) {
+                            ctx.input_state_in_flight.window_resizing = true;
+                            ctx.xdg_toplevel.resize(
+                                ctx.wl_seat,
+                                ctx.input_state_in_flight.left_button_serial,
+                                .bottom,
+                            );
+                        }
                     }
                     try ctx.callback(ctx.t, ctx.input_state_in_flight);
                 },
