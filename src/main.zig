@@ -32,21 +32,18 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
 
     const total_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
     app_ctx.prev_input_state = input_state;
-    app_ctx.prev_input_state.vertical_scroll = total_scroll;
+    app_ctx.prev_input_state.vertical_scroll = 0;
 
-    const delta_zoom: ?f64 = if (total_scroll > 1 or total_scroll < -1) total_scroll else null;
-    if (delta_zoom) |amt| {
-        std.debug.print("eye: ({d:3}, {d:3}, {d:3})\n", .{ app_ctx.eye[0], app_ctx.eye[1], app_ctx.eye[2] });
-        const dir_long = app_ctx.focus_point - app_ctx.eye;
-        std.debug.print("  dir_long: ({d:3}, {d:3}, {d:3})\n", .{ dir_long[0], dir_long[1], dir_long[2] });
-        const dir_len = zm.length3(dir_long)[0];
-        std.debug.print("  dir_len; {d:3}\n", .{dir_len});
-        const dir = zm.normalize3(app_ctx.focus_point - app_ctx.eye);
-        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(amt))) * dir;
-        app_ctx.prev_input_state.vertical_scroll = 0;
-        std.debug.print("  dir: ({d:3}, {d:3}, {d:3})\n", .{ dir[0], dir[1], dir[2] });
-        std.debug.print("  amt: {d:3}\n", .{amt});
-        std.debug.print("  eye: ({d:3}, {d:3}, {d:3})\n", .{ app_ctx.eye[0], app_ctx.eye[1], app_ctx.eye[2] });
+    const dir = zm.normalize3(app_ctx.focus_point - app_ctx.eye);
+    const dir_long = app_ctx.focus_point - app_ctx.eye;
+    const dir_len = zm.length3(dir_long)[0];
+
+    const delta_eye = @as(zm.Vec, @splat(@floatCast(total_scroll))) * dir;
+    const delta_eye_len = zm.length3(delta_eye)[0];
+
+    if (total_scroll < 0 or dir_len > delta_eye_len) {
+        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(total_scroll))) * dir;
+        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
     }
 
     if (app_ctx.angle > 0.001 or app_ctx.angle < -0.001) {

@@ -293,6 +293,7 @@ pub fn WaylandContext(comptime T: type) type {
                         }
                     }
                     try ctx.callback(ctx.t, ctx.input_state_in_flight);
+                    ctx.input_state_in_flight.vertical_scroll = 0;
                 },
                 else => {},
             }
