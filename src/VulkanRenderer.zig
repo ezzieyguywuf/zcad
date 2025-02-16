@@ -433,6 +433,7 @@ pub const Renderer = struct {
             const extent = vk.Extent2D{ .width = self.width, .height = self.height };
             try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
             try vk_ctx.device.queueWaitIdle(vk_ctx.presentation_queue);
+
             try self.swapchain.recreate(allocator, vk_ctx, extent);
 
             for (self.framebuffers) |fb| vk_ctx.device.destroyFramebuffer(fb, null);

@@ -38,6 +38,7 @@ pub fn WaylandContext(comptime T: type) type {
         should_exit: bool,
         should_resize: bool,
         ready_to_resize: bool,
+        resizing_done: bool,
         width: i32,
         height: i32,
 
@@ -93,6 +94,7 @@ pub fn WaylandContext(comptime T: type) type {
                 .should_exit = false,
                 .ready_to_resize = false,
                 .should_resize = false,
+                .resizing_done = false,
             };
 
             self.wl_pointer.setListener(*WaylandContext(T), pointerListener, self);
@@ -129,9 +131,10 @@ pub fn WaylandContext(comptime T: type) type {
                 // std.debug.print("Done with roundtrip\n", .{});
                 return false;
             }
-            if (self.should_resize) {
+            if (self.should_resize and self.resizing_done) {
                 self.ready_to_resize = false;
                 self.should_resize = false;
+                self.resizing_done = false;
 
                 self.wl_surface.commit();
             }

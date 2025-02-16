@@ -145,12 +145,14 @@ pub fn main() !void {
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
     }
     while ((!wl_ctx.should_exit) and (!app_ctx.should_exit)) {
-        const should_render = try wl_ctx.run();
-        if (!should_render) continue;
         if (wl_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
             app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
+            wl_ctx.resizing_done = true;
         }
+
+        const should_render = try wl_ctx.run();
+        if (!should_render) continue;
 
         try renderer.render(
             allocator,
