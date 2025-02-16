@@ -222,13 +222,13 @@ pub fn WaylandContext(comptime T: type) type {
                     // });
                     const x = ctx.input_state_in_flight.pointer_x;
                     const y = ctx.input_state_in_flight.pointer_y;
-                    const drag_size: f64 = 5;
+                    const drag_size: f64 = 15;
                     const right_edge = @as(f64, @floatFromInt(ctx.width)) - drag_size;
                     const bottom_edge = @as(f64, @floatFromInt(ctx.height)) - drag_size;
                     if (window_moving and ctx.input_state_in_flight.left_button == false) {
                         ctx.input_state_in_flight.window_moving = false;
                     }
-                    if (x > drag_size and y <= 10 and x < right_edge) {
+                    if (x > drag_size and y <= 15 and x < right_edge) {
                         ctx.input_state_in_flight.window_moving = true;
                         ctx.xdg_toplevel.move(
                             ctx.wl_seat,
