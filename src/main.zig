@@ -15,6 +15,10 @@ const AppContext = struct {
 };
 
 pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
+    if (input_state.should_close) {
+        app_ctx.should_exit = true;
+        return;
+    }
     const delta_angle = std.math.pi / @as(f32, 9);
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
         if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
@@ -125,6 +129,7 @@ pub fn main() !void {
         @ptrCast(wl_ctx.wl_display),
         @ptrCast(wl_ctx.wl_surface),
     );
+    defer vk_ctx.deinit(allocator);
     var renderer = try vkr.Renderer.init(
         allocator,
         &vk_ctx,
@@ -139,7 +144,7 @@ pub fn main() !void {
         const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
     }
-    while ((!wl_ctx.should_exit) or (!app_ctx.should_exit)) {
+    while ((!wl_ctx.should_exit) and (!app_ctx.should_exit)) {
         const should_render = try wl_ctx.run();
         if (!should_render) continue;
         if (wl_ctx.should_resize) {
@@ -156,8 +161,10 @@ pub fn main() !void {
         );
     }
 
+    std.debug.print("exited loop\n", .{});
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);
     try vk_ctx.device.deviceWaitIdle();
+    std.debug.print("exiting main\n", .{});
 }
 
 // This is unitless, by design. For higher precision maths, simply scale these

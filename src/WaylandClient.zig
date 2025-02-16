@@ -244,16 +244,16 @@ pub fn WaylandContext(comptime T: type) type {
                                 .top_left,
                             );
                         }
-                        if (x > right_edge and y <= drag_size) {
+                        if (ctx.input_state_in_flight.left_button and x > right_edge and y <= drag_size) {
+                            ctx.input_state_in_flight.should_close = true;
+                        }
+                        if (x > right_edge and y > bottom_edge) {
                             ctx.input_state_in_flight.window_resizing = true;
                             ctx.xdg_toplevel.resize(
                                 ctx.wl_seat,
                                 ctx.input_state_in_flight.left_button_serial,
-                                .top_right,
+                                .bottom_right,
                             );
-                        }
-                        if (x > right_edge and y > bottom_edge) {
-                            ctx.input_state_in_flight.should_close = true;
                         }
                         if (x < drag_size and y > bottom_edge) {
                             ctx.input_state_in_flight.window_resizing = true;

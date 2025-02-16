@@ -40,6 +40,9 @@ pub const Renderer = struct {
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
+        // TODO: figure out why this needs to be freed since
+        // self.command_buffers is freed in deinit();
+        defer allocator.free(command_buffers);
 
         const descriptor_set_layout = try setupDescriptors(vk_ctx);
         defer vk_ctx.device.destroyDescriptorSetLayout(descriptor_set_layout, null);
@@ -143,18 +146,27 @@ pub const Renderer = struct {
             vk_ctx.device.unmapMemory(uniform_buffer_memory);
             vk_ctx.device.freeMemory(uniform_buffer_memory, null);
         }
+        for (self.framebuffers) |framebuffer| {
+            vk_ctx.device.destroyFramebuffer(framebuffer, null);
+        }
         vk_ctx.device.destroyPipeline(self.pipeline, null);
-        vk_ctx.device.destroyCommandPool(self.command_pool, null);
+        vk_ctx.device.destroyPipelineLayout(self.pipeline_layout, null);
         vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
         vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
+        vk_ctx.device.destroyBuffer(self.index_buffer, null);
         vk_ctx.device.freeMemory(self.vertex_memory, null);
+        vk_ctx.device.freeMemory(self.index_memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
+        vk_ctx.device.destroyCommandPool(self.command_pool, null);
 
+        std.debug.print("freeing command_buffers\n", .{});
         allocator.free(self.command_buffers);
+        std.debug.print("command_buffers freed\n", .{});
         allocator.free(self.uniform_buffers);
         allocator.free(self.uniform_buffer_memories);
         allocator.free(self.uniform_buffer_mapped_memories);
         allocator.free(self.descriptor_sets);
+        allocator.free(self.framebuffers);
     }
 
     pub fn createCommandBuffers(
