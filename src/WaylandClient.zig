@@ -22,6 +22,7 @@ pub const InputState = packed struct {
     middle_button: bool = false,
     right_button: bool = false,
     vertical_scroll: f64 = 0,
+    horizontal_scroll: f64 = 0,
     pointer_x: f64 = 0,
     pointer_y: f64 = 0,
     window_moving: bool = false,
@@ -208,7 +209,7 @@ pub fn WaylandContext(comptime T: type) type {
                 .axis => |axis| {
                     switch (axis.axis) {
                         .vertical_scroll => ctx.input_state_in_flight.vertical_scroll += axis.value.toDouble(),
-                        .horizontal_scroll => {},
+                        .horizontal_scroll => ctx.input_state_in_flight.horizontal_scroll += axis.value.toDouble(),
                         else => std.debug.print("unrecognized axis: {any}\n", .{axis}),
                     }
                 },
@@ -297,6 +298,7 @@ pub fn WaylandContext(comptime T: type) type {
                     }
                     try ctx.callback(ctx.t, ctx.input_state_in_flight);
                     ctx.input_state_in_flight.vertical_scroll = 0;
+                    ctx.input_state_in_flight.horizontal_scroll = 0;
                 },
                 else => {},
             }

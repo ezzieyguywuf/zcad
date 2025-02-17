@@ -20,10 +20,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
         return;
     }
     const delta_angle = std.math.pi / @as(f32, 9);
-    // std.debug.print("window_moving: {any}, window_resizing: {any}\n", .{
-    //     input_state.window_moving,
-    //     input_state.window_resizing,
-    // });
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
         if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
             app_ctx.angle += delta_angle;
@@ -34,19 +30,29 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
         if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
     }
 
-    const total_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
+    const total_vertical_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
+    const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
     app_ctx.prev_input_state = input_state;
     app_ctx.prev_input_state.vertical_scroll = 0;
+    app_ctx.prev_input_state.horizontal_scroll = 0;
 
-    const dir = zm.normalize3(app_ctx.focus_point - app_ctx.eye);
     const dir_long = app_ctx.focus_point - app_ctx.eye;
+    const dir = zm.normalize3(dir_long);
     const dir_len = zm.length3(dir_long)[0];
 
-    const delta_eye = @as(zm.Vec, @splat(@floatCast(total_scroll))) * dir;
+    const delta_eye = @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
     const delta_eye_len = zm.length3(delta_eye)[0];
 
-    if (total_scroll < 0 or dir_len > delta_eye_len) {
-        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(total_scroll))) * dir;
+    if (total_horizontal_scroll != 0) {
+        const angle = std.math.pi / @as(f64, @floatCast(368)) * total_horizontal_scroll;
+        const rotate = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle));
+        const new_dir_long = zm.mul(rotate, dir_long);
+        app_ctx.focus_point = app_ctx.eye + new_dir_long;
+        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
+    }
+
+    if (total_vertical_scroll < 0 or dir_len > delta_eye_len) {
+        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
         app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
     }
 
