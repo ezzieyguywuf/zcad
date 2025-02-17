@@ -6,7 +6,6 @@ const zm = @import("zmath");
 
 const AppContext = struct {
     prev_input_state: wl.InputState,
-    angle: f32,
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
@@ -19,22 +18,8 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
         app_ctx.should_exit = true;
         return;
     }
-    const delta_angle = std.math.pi / @as(f32, 9);
-    if ((!input_state.window_moving) and (!input_state.window_resizing)) {
-        if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
-            app_ctx.angle += delta_angle;
-        }
-        if (input_state.right_button and !app_ctx.prev_input_state.right_button) {
-            app_ctx.angle -= delta_angle;
-        }
-        if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
-    }
-
     const total_vertical_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
     const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
-    app_ctx.prev_input_state = input_state;
-    app_ctx.prev_input_state.vertical_scroll = 0;
-    app_ctx.prev_input_state.horizontal_scroll = 0;
 
     const dir_long = app_ctx.focus_point - app_ctx.eye;
     const dir = zm.normalize3(dir_long);
@@ -43,23 +28,40 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
     const delta_eye = @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
     const delta_eye_len = zm.length3(delta_eye)[0];
 
+    if ((!input_state.window_moving) and (!input_state.window_resizing)) {
+        if (input_state.left_button) {
+            // TODO rotation around focus_point
+            // const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
+            // const angle_x = std.math.pi / @as(f64, @floatCast(368)) * delta_x;
+            // const rotate_x = zm.rotationX(@floatCast(angle_x));
+
+            // const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
+            // const angle_y = std.math.pi / @as(f64, @floatCast(368)) * delta_y;
+            // const rotate_y = zm.rotationZ(@floatCast(angle_y));
+
+            // std.debug.print("pointer_x: {d:3}, pointer_y: {d:3}\n", .{ input_state.pointer_x, input_state.pointer_y });
+            // std.debug.print("  delta_x: {d:3}, delta_y: {d:3}\n", .{ delta_x, delta_y });
+            // std.debug.print("  angle_x: {d:3}, angle_y: {d:3}\n", .{ angle_x, angle_y });
+            // app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
+        }
+        if (input_state.right_button and !app_ctx.prev_input_state.right_button) {}
+        if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
+    }
+
     if (total_horizontal_scroll != 0) {
         const angle = std.math.pi / @as(f64, @floatCast(368)) * total_horizontal_scroll;
         const rotate = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle));
         const new_dir_long = zm.mul(rotate, dir_long);
         app_ctx.focus_point = app_ctx.eye + new_dir_long;
-        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
     }
 
     if (total_vertical_scroll < 0 or dir_len > delta_eye_len) {
         app_ctx.eye += @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
-        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
     }
 
-    if (app_ctx.angle > 0.001 or app_ctx.angle < -0.001) {
-        const axis = zm.Vec{ 0, 1, 0, 0 };
-        app_ctx.mvp_ubo.model = zm.matFromAxisAngle(axis, app_ctx.angle);
-    }
+    app_ctx.prev_input_state = input_state;
+    app_ctx.prev_input_state.vertical_scroll = 0;
+    app_ctx.prev_input_state.horizontal_scroll = 0;
 }
 
 pub fn main() !void {
@@ -85,7 +87,6 @@ pub fn main() !void {
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
         .prev_input_state = wl.InputState{},
-        .angle = 0,
         .eye = eye,
         .focus_point = focus_point,
         .up = up,
@@ -161,6 +162,7 @@ pub fn main() !void {
         const should_render = try wl_ctx.run();
         if (!should_render) continue;
 
+        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
         try renderer.render(
             allocator,
             &vk_ctx,
