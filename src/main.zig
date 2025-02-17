@@ -20,6 +20,10 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
         return;
     }
     const delta_angle = std.math.pi / @as(f32, 9);
+    // std.debug.print("window_moving: {any}, window_resizing: {any}\n", .{
+    //     input_state.window_moving,
+    //     input_state.window_resizing,
+    // });
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
         if (input_state.left_button and !app_ctx.prev_input_state.left_button) {
             app_ctx.angle += delta_angle;
@@ -82,7 +86,7 @@ pub fn main() !void {
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 100.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 10000.0),
         },
         .should_exit = false,
     };
@@ -139,12 +143,12 @@ pub fn main() !void {
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
-        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
+        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 10000.0);
     }
     while ((!wl_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (wl_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
-            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 100.0);
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 10000.0);
             wl_ctx.resizing_done = true;
         }
 

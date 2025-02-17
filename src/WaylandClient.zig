@@ -231,6 +231,9 @@ pub fn WaylandContext(comptime T: type) type {
                     if (window_moving and ctx.input_state_in_flight.left_button == false) {
                         ctx.input_state_in_flight.window_moving = false;
                     }
+                    if (ctx.input_state_in_flight.window_resizing and ctx.input_state_in_flight.left_button == false) {
+                        ctx.input_state_in_flight.window_resizing = false;
+                    }
                     if (x > drag_size and y <= 15 and x < right_edge) {
                         ctx.input_state_in_flight.window_moving = true;
                         ctx.xdg_toplevel.move(
