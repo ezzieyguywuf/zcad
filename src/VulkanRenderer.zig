@@ -7,14 +7,12 @@ const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
 
-const vert_spv align(@alignOf(u32)) = @embedFile("vertex_shader").*;
-const frag_spv align(@alignOf(u32)) = @embedFile("fragment_shader").*;
-
 pub const Renderer = struct {
     swapchain: Swapchain,
     render_pass: vk.RenderPass,
     pipeline_layout: vk.PipelineLayout,
     pipeline: vk.Pipeline,
+    circle_pipeline: vk.Pipeline,
     command_pool: vk.CommandPool,
     descriptor_pool: vk.DescriptorPool,
     framebuffers: []vk.Framebuffer,
@@ -31,7 +29,6 @@ pub const Renderer = struct {
 
     width: u32,
     height: u32,
-    n_vertices: u32,
     n_indices: u32,
 
     pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32, vertices: []const Vertex, indices: []const u32) !Renderer {
@@ -54,7 +51,24 @@ pub const Renderer = struct {
             .p_push_constant_ranges = undefined,
         };
         const pipeline_layout = try vk_ctx.device.createPipelineLayout(&pipeline_layout_create_info, null);
-        const pipeline = try vk_ctx.createPipeline(pipeline_layout, render_pass);
+
+        const pipeline = try vk_ctx.createPipeline(
+            "vertex_shader",
+            "fragment_shader",
+            .triangle_list,
+            false,
+            pipeline_layout,
+            render_pass,
+        );
+
+        const circle_pipeline = try vk_ctx.createPipeline(
+            "circle_vertex_shader",
+            "circle_fragment_shader",
+            .point_list,
+            true,
+            pipeline_layout,
+            render_pass,
+        );
 
         const command_pool_create_info = vk.CommandPoolCreateInfo{
             .queue_family_index = vk_ctx.graphics_queue_index,
@@ -105,6 +119,7 @@ pub const Renderer = struct {
             .framebuffers = framebuffers,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
+            .circle_pipeline = circle_pipeline,
             .command_pool = command_pool,
             .descriptor_pool = descriptor_pool,
             .vertex_buffer = vertex_buffer,
@@ -115,7 +130,6 @@ pub const Renderer = struct {
             .descriptor_sets = descriptor_sets,
             .width = width,
             .height = height,
-            .n_vertices = @intCast(vertices.len),
             .n_indices = @intCast(indices.len),
             .uniform_buffers = undefined,
             .uniform_buffer_memories = undefined,
@@ -150,6 +164,7 @@ pub const Renderer = struct {
             vk_ctx.device.destroyFramebuffer(framebuffer, null);
         }
         vk_ctx.device.destroyPipeline(self.pipeline, null);
+        vk_ctx.device.destroyPipeline(self.circle_pipeline, null);
         vk_ctx.device.destroyPipelineLayout(self.pipeline_layout, null);
         vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
         vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
@@ -228,20 +243,19 @@ pub const Renderer = struct {
                 .p_clear_values = @ptrCast(&clear),
             }, .@"inline");
 
+            // Draw triangles
             device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
             device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
             device.cmdBindIndexBuffer(command_buffer, self.index_buffer, 0, vk.IndexType.uint32);
-            device.cmdBindDescriptorSets(
-                command_buffer,
-                .graphics,
-                self.pipeline_layout,
-                0,
-                1,
-                &.{descriptor_set},
-                0,
-                null,
-            );
+            device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+            device.cmdDrawIndexed(command_buffer, self.n_indices, 1, 0, 0, 0);
+
+            // draw dots
+            device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
+            device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
+            // device.cmdBindIndexBuffer(command_buffer, self.index_buffer, 0, vk.IndexType.uint32);
+            device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
             device.cmdDrawIndexed(command_buffer, self.n_indices, 1, 0, 0, 0);
 
             device.cmdEndRenderPass(command_buffer);
@@ -442,12 +456,6 @@ pub const Renderer = struct {
             vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
             allocator.free(self.command_buffers);
 
-            // const buffer_create_info = vk.BufferCreateInfo{
-            //     .size = self.n_vertices * @sizeOf(Vertex),
-            //     .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-            //     .sharing_mode = .exclusive,
-            // };
-            // self.buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
             self.command_buffers = try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
         }
     }
@@ -719,7 +727,19 @@ pub const VulkanContext = struct {
         }, null);
     }
 
-    fn createPipeline(self: *const VulkanContext, layout: vk.PipelineLayout, render_pass: vk.RenderPass) !vk.Pipeline {
+    // These "fname"s are embedded files - this is set up in build.zig
+    fn createPipeline(
+        self: *const VulkanContext,
+        comptime vert_fname: []const u8,
+        comptime frag_fname: []const u8,
+        topology: vk.PrimitiveTopology,
+        blend_enable: bool,
+        layout: vk.PipelineLayout,
+        render_pass: vk.RenderPass,
+    ) !vk.Pipeline {
+        const vert_spv align(@alignOf(u32)) = @embedFile(vert_fname).*;
+        const frag_spv align(@alignOf(u32)) = @embedFile(frag_fname).*;
+
         const vert = try self.device.createShaderModule(&.{
             .code_size = vert_spv.len,
             .p_code = @ptrCast(&vert_spv),
@@ -750,7 +770,7 @@ pub const VulkanContext = struct {
         };
 
         const pipeline_input_assembly_state_create_info = vk.PipelineInputAssemblyStateCreateInfo{
-            .topology = .triangle_list,
+            .topology = topology,
             .primitive_restart_enable = vk.FALSE,
         };
 
@@ -783,14 +803,14 @@ pub const VulkanContext = struct {
         };
 
         const pipeline_color_blend_attachment_state = vk.PipelineColorBlendAttachmentState{
-            .blend_enable = vk.FALSE,
-            .src_color_blend_factor = .one,
-            .dst_color_blend_factor = .zero,
+            .blend_enable = if (blend_enable) vk.TRUE else vk.FALSE,
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
             .color_blend_op = .add,
             .src_alpha_blend_factor = .one,
             .dst_alpha_blend_factor = .zero,
             .alpha_blend_op = .add,
-            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
+            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
         };
 
         const pipeline_color_blend_state_create_info = vk.PipelineColorBlendStateCreateInfo{

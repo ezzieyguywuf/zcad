@@ -72,6 +72,27 @@ pub fn build(b: *std.Build) void {
         .root_source_file = frag_spv,
     });
 
+    const circle_vert_cmd = b.addSystemCommand(&.{
+        "glslc",
+        "--target-env=vulkan1.2",
+        "-o",
+    });
+    const circle_vert_spv = circle_vert_cmd.addOutputFileArg("circle_vert.spv");
+    circle_vert_cmd.addFileArg(b.path("shaders/circle.vert"));
+    exe.root_module.addAnonymousImport("circle_vertex_shader", .{
+        .root_source_file = circle_vert_spv,
+    });
+
+    const circle_frag_cmd = b.addSystemCommand(&.{
+        "glslc",
+        "--target-env=vulkan1.2",
+        "-o",
+    });
+    const circle_frag_spv = circle_frag_cmd.addOutputFileArg("circle_frag.spv");
+    circle_frag_cmd.addFileArg(b.path("shaders/circle.frag"));
+    exe.root_module.addAnonymousImport("circle_fragment_shader", .{
+        .root_source_file = circle_frag_spv,
+    });
     const test_filter = b.option([]const u8, "test-filter", "Filter for test");
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
