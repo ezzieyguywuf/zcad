@@ -41,9 +41,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
             const axis = zm.cross3(app_ctx.eye, app_ctx.up);
             const rotate_y = zm.matFromAxisAngle(axis, @floatCast(angle_y));
 
-            // std.debug.print("pointer_x: {d:3}, pointer_y: {d:3}\n", .{ input_state.pointer_x, input_state.pointer_y });
-            // std.debug.print("  delta_x: {d:3}, delta_y: {d:3}\n", .{ delta_x, delta_y });
-            // std.debug.print("  angle_x: {d:3}, angle_y: {d:3}\n", .{ angle_x, angle_y });
             app_ctx.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.up));
             app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
         }
@@ -134,6 +131,14 @@ pub fn main() !void {
     }
     const indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
 
+    const vkPointVertices = [_]vkr.Vertex{
+        .{
+            .pos = .{ -5, -5, 0 },
+            .color = .{ 0, 0.5, 0.5 },
+        },
+    };
+    const point_indices = [_]u32{0};
+
     // vulkan
     const vk_ctx = try vkr.VulkanContext.init(
         allocator,
@@ -141,14 +146,9 @@ pub fn main() !void {
         @ptrCast(wl_ctx.wl_surface),
     );
     defer vk_ctx.deinit(allocator);
-    var renderer = try vkr.Renderer.init(
-        allocator,
-        &vk_ctx,
-        @intCast(wl_ctx.width),
-        @intCast(wl_ctx.height),
-        &vkVertices,
-        &indices,
-    );
+    var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wl_ctx.width), @intCast(wl_ctx.height));
+    try renderer.uploadTriangles(&vk_ctx, &vkVertices, &indices);
+    try renderer.uploadPoints(&vk_ctx, &vkPointVertices, &point_indices);
     defer renderer.deinit(allocator, &vk_ctx);
 
     {

@@ -19,27 +19,30 @@ pub const Renderer = struct {
     command_buffers: []vk.CommandBuffer,
     descriptor_sets: []vk.DescriptorSet,
 
-    vertex_buffer: vk.Buffer,
-    vertex_memory: vk.DeviceMemory,
-    index_buffer: vk.Buffer,
-    index_memory: vk.DeviceMemory,
+    triangles_vertex_buffer: vk.Buffer,
+    triangle_vertex_memory: vk.DeviceMemory,
+    triangles_index_buffer: vk.Buffer,
+    triangles_index_memory: vk.DeviceMemory,
+    points_vertex_buffer: vk.Buffer,
+    points_vertex_memory: vk.DeviceMemory,
+    points_index_buffer: vk.Buffer,
+    points_index_memory: vk.DeviceMemory,
     uniform_buffers: []vk.Buffer,
     uniform_buffer_memories: []vk.DeviceMemory,
     uniform_buffer_mapped_memories: []*MVPUniformBufferObject,
 
     width: u32,
     height: u32,
-    n_indices: u32,
+    n_triangle_indices: u32,
+    n_point_indices: u32,
 
-    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32, vertices: []const Vertex, indices: []const u32) !Renderer {
+    pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
-        // TODO: figure out why this needs to be freed since
-        // self.command_buffers is freed in deinit();
-        defer allocator.free(command_buffers);
+        errdefer allocator.free(command_buffers);
 
         const descriptor_set_layout = try setupDescriptors(vk_ctx);
         defer vk_ctx.device.destroyDescriptorSetLayout(descriptor_set_layout, null);
@@ -75,22 +78,6 @@ pub const Renderer = struct {
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
 
-        const vertex_buffer, const vertex_memory = try createBuffer(
-            vk_ctx,
-            Vertex,
-            vertices.len,
-            .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        );
-        try Renderer.uploadData(vk_ctx, Vertex, vertices, command_pool, vertex_buffer, vertex_memory);
-
-        const index_buffer, const index_memory = try createBuffer(
-            vk_ctx,
-            u32,
-            indices.len,
-            .{ .transfer_dst_bit = true, .index_buffer_bit = true },
-        );
-        try Renderer.uploadData(vk_ctx, u32, indices, command_pool, index_buffer, index_memory);
-
         const descriptor_pool_size = vk.DescriptorPoolSize{
             .type = .uniform_buffer,
             .descriptor_count = @intCast(framebuffers.len),
@@ -122,15 +109,20 @@ pub const Renderer = struct {
             .circle_pipeline = circle_pipeline,
             .command_pool = command_pool,
             .descriptor_pool = descriptor_pool,
-            .vertex_buffer = vertex_buffer,
-            .vertex_memory = vertex_memory,
-            .index_buffer = index_buffer,
-            .index_memory = index_memory,
+            .triangles_vertex_buffer = undefined,
+            .triangle_vertex_memory = undefined,
+            .triangles_index_buffer = undefined,
+            .triangles_index_memory = undefined,
+            .points_vertex_buffer = undefined,
+            .points_vertex_memory = undefined,
+            .points_index_buffer = undefined,
+            .points_index_memory = undefined,
             .command_buffers = command_buffers,
             .descriptor_sets = descriptor_sets,
             .width = width,
             .height = height,
-            .n_indices = @intCast(indices.len),
+            .n_triangle_indices = 0,
+            .n_point_indices = 0,
             .uniform_buffers = undefined,
             .uniform_buffer_memories = undefined,
             .uniform_buffer_mapped_memories = undefined,
@@ -143,12 +135,6 @@ pub const Renderer = struct {
         // leave some member variables `undefined` above and init them in these
         // helpers
         try renderer.createUniformBuffers(allocator, vk_ctx, framebuffers.len);
-        renderer.command_buffers = try renderer.createCommandBuffers(
-            allocator,
-            &vk_ctx.device,
-            .{ .width = @intCast(width), .height = @intCast(height) },
-        );
-
         return renderer;
     }
 
@@ -167,16 +153,18 @@ pub const Renderer = struct {
         vk_ctx.device.destroyPipeline(self.circle_pipeline, null);
         vk_ctx.device.destroyPipelineLayout(self.pipeline_layout, null);
         vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
-        vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
-        vk_ctx.device.destroyBuffer(self.index_buffer, null);
-        vk_ctx.device.freeMemory(self.vertex_memory, null);
-        vk_ctx.device.freeMemory(self.index_memory, null);
+        vk_ctx.device.destroyBuffer(self.triangles_vertex_buffer, null);
+        vk_ctx.device.destroyBuffer(self.triangles_index_buffer, null);
+        vk_ctx.device.freeMemory(self.triangle_vertex_memory, null);
+        vk_ctx.device.freeMemory(self.triangles_index_memory, null);
+        vk_ctx.device.destroyBuffer(self.points_vertex_buffer, null);
+        vk_ctx.device.destroyBuffer(self.points_index_buffer, null);
+        vk_ctx.device.freeMemory(self.points_vertex_memory, null);
+        vk_ctx.device.freeMemory(self.points_index_memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
         vk_ctx.device.destroyCommandPool(self.command_pool, null);
 
-        std.debug.print("freeing command_buffers\n", .{});
         allocator.free(self.command_buffers);
-        std.debug.print("command_buffers freed\n", .{});
         allocator.free(self.uniform_buffers);
         allocator.free(self.uniform_buffer_memories);
         allocator.free(self.uniform_buffer_mapped_memories);
@@ -186,20 +174,16 @@ pub const Renderer = struct {
 
     pub fn createCommandBuffers(
         self: *Renderer,
-        allocator: std.mem.Allocator,
         device: *const VulkanContext.Device,
         extent: vk.Extent2D,
-    ) ![]vk.CommandBuffer {
-        const command_buffers = try allocator.alloc(vk.CommandBuffer, self.framebuffers.len);
-        errdefer allocator.free(command_buffers);
-
+    ) !void {
         const command_buffer_allocate_info = vk.CommandBufferAllocateInfo{
             .command_pool = self.command_pool,
             .level = .primary,
-            .command_buffer_count = @intCast(command_buffers.len),
+            .command_buffer_count = @intCast(self.command_buffers.len),
         };
-        try device.allocateCommandBuffers(&command_buffer_allocate_info, command_buffers.ptr);
-        errdefer device.freeCommandBuffers(self.command_pool, @intCast(command_buffers.len), command_buffers.ptr);
+        try device.allocateCommandBuffers(&command_buffer_allocate_info, self.command_buffers.ptr);
+        errdefer device.freeCommandBuffers(self.command_pool, @intCast(self.command_buffers.len), self.command_buffers.ptr);
 
         const clear = vk.ClearValue{
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
@@ -220,7 +204,7 @@ pub const Renderer = struct {
         };
 
         for (
-            command_buffers,
+            self.command_buffers,
             self.framebuffers,
             self.descriptor_sets,
         ) |command_buffer, framebuffer, descriptor_set| {
@@ -243,26 +227,28 @@ pub const Renderer = struct {
                 .p_clear_values = @ptrCast(&clear),
             }, .@"inline");
 
-            // Draw triangles
-            device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
             const offset = [_]vk.DeviceSize{0};
-            device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
-            device.cmdBindIndexBuffer(command_buffer, self.index_buffer, 0, vk.IndexType.uint32);
-            device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
-            device.cmdDrawIndexed(command_buffer, self.n_indices, 1, 0, 0, 0);
+            // Draw triangles
+            if (self.n_triangle_indices > 0) {
+                device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.triangles_vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, self.triangles_index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+                device.cmdDrawIndexed(command_buffer, self.n_triangle_indices, 1, 0, 0, 0);
+            }
 
             // draw dots
-            device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
-            device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.vertex_buffer), &offset);
-            // device.cmdBindIndexBuffer(command_buffer, self.index_buffer, 0, vk.IndexType.uint32);
-            device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
-            device.cmdDrawIndexed(command_buffer, self.n_indices, 1, 0, 0, 0);
+            if (self.n_point_indices > 0) {
+                device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.points_vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, self.points_index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+                device.cmdDrawIndexed(command_buffer, self.n_point_indices, 1, 0, 0, 0);
+            }
 
             device.cmdEndRenderPass(command_buffer);
             try device.endCommandBuffer(command_buffer);
         }
-
-        return command_buffers;
     }
 
     fn createUniformBuffers(
@@ -373,7 +359,73 @@ pub const Renderer = struct {
         return .{ buffer, memory };
     }
 
-    pub fn uploadData(
+    pub fn uploadTriangles(
+        self: *Renderer,
+        vk_ctx: *const VulkanContext,
+        vertices: []const Vertex,
+        indices: []const u32,
+    ) !void {
+        if (indices.len != self.n_triangle_indices) {
+            const vertex_buffer, const vertex_memory = try createBuffer(
+                vk_ctx,
+                Vertex,
+                vertices.len,
+                .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+            );
+
+            const index_buffer, const index_memory = try createBuffer(
+                vk_ctx,
+                u32,
+                indices.len,
+                .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+            );
+
+            self.triangles_vertex_buffer = vertex_buffer;
+            self.triangle_vertex_memory = vertex_memory;
+            self.triangles_index_buffer = index_buffer;
+            self.triangles_index_memory = index_memory;
+            self.n_triangle_indices = @intCast(indices.len);
+        }
+        try uploadData(vk_ctx, Vertex, vertices, self.command_pool, self.triangles_vertex_buffer, self.triangle_vertex_memory);
+        try uploadData(vk_ctx, u32, indices, self.command_pool, self.triangles_index_buffer, self.triangles_index_memory);
+
+        try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
+    }
+
+    pub fn uploadPoints(
+        self: *Renderer,
+        vk_ctx: *const VulkanContext,
+        points: []const Vertex,
+        indices: []const u32,
+    ) !void {
+        if (indices.len != self.n_triangle_indices) {
+            const vertex_buffer, const vertex_memory = try createBuffer(
+                vk_ctx,
+                Vertex,
+                points.len,
+                .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+            );
+
+            const index_buffer, const index_memory = try createBuffer(
+                vk_ctx,
+                u32,
+                indices.len,
+                .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+            );
+
+            self.points_vertex_buffer = vertex_buffer;
+            self.points_vertex_memory = vertex_memory;
+            self.points_index_buffer = index_buffer;
+            self.points_index_memory = index_memory;
+            self.n_point_indices = @intCast(indices.len);
+        }
+        try uploadData(vk_ctx, Vertex, points, self.command_pool, self.points_vertex_buffer, self.points_vertex_memory);
+        try uploadData(vk_ctx, u32, indices, self.command_pool, self.points_index_buffer, self.points_index_memory);
+
+        try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
+    }
+
+    fn uploadData(
         vk_ctx: *const VulkanContext,
         comptime T: type,
         data: []const T,
@@ -451,12 +503,12 @@ pub const Renderer = struct {
             try self.swapchain.recreate(allocator, vk_ctx, extent);
 
             for (self.framebuffers) |fb| vk_ctx.device.destroyFramebuffer(fb, null);
+            // TODO: we shouldn't need to free this
             allocator.free(self.framebuffers);
             self.framebuffers = try vk_ctx.createFramebuffers(allocator, &self.swapchain, self.render_pass);
             vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
-            allocator.free(self.command_buffers);
 
-            self.command_buffers = try self.createCommandBuffers(allocator, &vk_ctx.device, extent);
+            try self.createCommandBuffers(&vk_ctx.device, extent);
         }
     }
 };
