@@ -27,29 +27,32 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
 
     const delta_eye = @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
     const delta_eye_len = zm.length3(delta_eye)[0];
+    const delta_radians = std.math.pi / @as(f64, @floatCast(368));
 
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
         if (input_state.left_button) {
             // TODO rotation around focus_point
-            // const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
-            // const angle_x = std.math.pi / @as(f64, @floatCast(368)) * delta_x;
-            // const rotate_x = zm.rotationX(@floatCast(angle_x));
+            const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
+            const angle_x = delta_radians * delta_x;
+            const rotate_x = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle_x));
 
-            // const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
-            // const angle_y = std.math.pi / @as(f64, @floatCast(368)) * delta_y;
-            // const rotate_y = zm.rotationZ(@floatCast(angle_y));
+            const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
+            const angle_y = delta_radians * delta_y;
+            const axis = zm.cross3(app_ctx.eye, app_ctx.up);
+            const rotate_y = zm.matFromAxisAngle(axis, @floatCast(angle_y));
 
             // std.debug.print("pointer_x: {d:3}, pointer_y: {d:3}\n", .{ input_state.pointer_x, input_state.pointer_y });
             // std.debug.print("  delta_x: {d:3}, delta_y: {d:3}\n", .{ delta_x, delta_y });
             // std.debug.print("  angle_x: {d:3}, angle_y: {d:3}\n", .{ angle_x, angle_y });
-            // app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
+            app_ctx.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.up));
+            app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
         }
         if (input_state.right_button and !app_ctx.prev_input_state.right_button) {}
         if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
     }
 
     if (total_horizontal_scroll != 0) {
-        const angle = std.math.pi / @as(f64, @floatCast(368)) * total_horizontal_scroll;
+        const angle = delta_radians * total_horizontal_scroll;
         const rotate = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle));
         const new_dir_long = zm.mul(rotate, dir_long);
         app_ctx.focus_point = app_ctx.eye + new_dir_long;
