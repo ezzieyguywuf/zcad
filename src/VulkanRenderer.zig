@@ -7,6 +7,44 @@ const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
 
+pub const InstancedDataType = enum { Points, Lines, Triangles };
+
+const InstancedData = struct {
+    vertex_buffer: vk.Buffer,
+    vertex_memory: vk.DeviceMemory,
+    index_buffer: vk.Buffer,
+    index_memory: vk.DeviceMemory,
+    n_indices: u32,
+
+    pub fn init(vk_ctx: *const VulkanContext, vertices: []const Vertex, indices: []const u32) !InstancedData {
+        const vertex_buffer, const vertex_memory = try vk_ctx.createBuffer(
+            Vertex,
+            vertices.len,
+            .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        );
+        const index_buffer, const index_memory = try vk_ctx.createBuffer(
+            Vertex,
+            indices.len,
+            .{ .transfer_dst_bit = true, .index_buffer_bit = true },
+        );
+
+        return InstancedData{
+            .vertex_buffer = vertex_buffer,
+            .vertex_memory = vertex_memory,
+            .index_buffer = index_buffer,
+            .index_memory = index_memory,
+            .n_indices = @intCast(indices.len),
+        };
+    }
+
+    pub fn deinit(self: *const InstancedData, vk_ctx: *const VulkanContext) void {
+        vk_ctx.device.destroyBuffer(self.vertex_buffer, null);
+        vk_ctx.device.destroyBuffer(self.index_buffer, null);
+        vk_ctx.device.freeMemory(self.vertex_memory, null);
+        vk_ctx.device.freeMemory(self.index_memory, null);
+    }
+};
+
 pub const Renderer = struct {
     swapchain: Swapchain,
     render_pass: vk.RenderPass,
@@ -19,22 +57,16 @@ pub const Renderer = struct {
     command_buffers: []vk.CommandBuffer,
     descriptor_sets: []vk.DescriptorSet,
 
-    triangles_vertex_buffer: vk.Buffer,
-    triangle_vertex_memory: vk.DeviceMemory,
-    triangles_index_buffer: vk.Buffer,
-    triangles_index_memory: vk.DeviceMemory,
-    points_vertex_buffer: vk.Buffer,
-    points_vertex_memory: vk.DeviceMemory,
-    points_index_buffer: vk.Buffer,
-    points_index_memory: vk.DeviceMemory,
+    point_instanced_data: ?InstancedData,
+    line_instanced_data: ?InstancedData,
+    triangle_instanced_data: ?InstancedData,
+
     uniform_buffers: []vk.Buffer,
     uniform_buffer_memories: []vk.DeviceMemory,
     uniform_buffer_mapped_memories: []*MVPUniformBufferObject,
 
     width: u32,
     height: u32,
-    n_triangle_indices: u32,
-    n_point_indices: u32,
 
     pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
@@ -109,23 +141,16 @@ pub const Renderer = struct {
             .circle_pipeline = circle_pipeline,
             .command_pool = command_pool,
             .descriptor_pool = descriptor_pool,
-            .triangles_vertex_buffer = undefined,
-            .triangle_vertex_memory = undefined,
-            .triangles_index_buffer = undefined,
-            .triangles_index_memory = undefined,
-            .points_vertex_buffer = undefined,
-            .points_vertex_memory = undefined,
-            .points_index_buffer = undefined,
-            .points_index_memory = undefined,
+            .point_instanced_data = null,
+            .line_instanced_data = null,
+            .triangle_instanced_data = null,
+            .uniform_buffers = undefined,
+            .uniform_buffer_memories = undefined,
+            .uniform_buffer_mapped_memories = undefined,
             .command_buffers = command_buffers,
             .descriptor_sets = descriptor_sets,
             .width = width,
             .height = height,
-            .n_triangle_indices = 0,
-            .n_point_indices = 0,
-            .uniform_buffers = undefined,
-            .uniform_buffer_memories = undefined,
-            .uniform_buffer_mapped_memories = undefined,
         };
 
         // note: these bits need to explicitly go _after_ the renderer has been
@@ -149,18 +174,25 @@ pub const Renderer = struct {
         for (self.framebuffers) |framebuffer| {
             vk_ctx.device.destroyFramebuffer(framebuffer, null);
         }
+        std.debug.print("Checking instanced datas\n", .{});
+        if (self.point_instanced_data) |data| {
+            std.debug.print("deiniting points\n", .{});
+            data.deinit(vk_ctx);
+        }
+        if (self.line_instanced_data) |data| {
+            std.debug.print("deiniting lines\n", .{});
+            data.deinit(vk_ctx);
+        }
+        if (self.triangle_instanced_data) |data| {
+            std.debug.print("deiniting triangles\n", .{});
+            data.deinit(vk_ctx);
+        }
+        std.debug.print("done Checking instanced datas\n", .{});
+
         vk_ctx.device.destroyPipeline(self.pipeline, null);
         vk_ctx.device.destroyPipeline(self.circle_pipeline, null);
         vk_ctx.device.destroyPipelineLayout(self.pipeline_layout, null);
         vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
-        vk_ctx.device.destroyBuffer(self.triangles_vertex_buffer, null);
-        vk_ctx.device.destroyBuffer(self.triangles_index_buffer, null);
-        vk_ctx.device.freeMemory(self.triangle_vertex_memory, null);
-        vk_ctx.device.freeMemory(self.triangles_index_memory, null);
-        vk_ctx.device.destroyBuffer(self.points_vertex_buffer, null);
-        vk_ctx.device.destroyBuffer(self.points_index_buffer, null);
-        vk_ctx.device.freeMemory(self.points_vertex_memory, null);
-        vk_ctx.device.freeMemory(self.points_index_memory, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
         vk_ctx.device.destroyCommandPool(self.command_pool, null);
 
@@ -229,22 +261,24 @@ pub const Renderer = struct {
 
             const offset = [_]vk.DeviceSize{0};
             // Draw triangles
-            if (self.n_triangle_indices > 0) {
+            if (self.triangle_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
-                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.triangles_vertex_buffer), &offset);
-                device.cmdBindIndexBuffer(command_buffer, self.triangles_index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
-                device.cmdDrawIndexed(command_buffer, self.n_triangle_indices, 1, 0, 0, 0);
+                device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
             }
 
             // draw dots
-            if (self.n_point_indices > 0) {
+            if (self.point_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
-                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&self.points_vertex_buffer), &offset);
-                device.cmdBindIndexBuffer(command_buffer, self.points_index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
-                device.cmdDrawIndexed(command_buffer, self.n_point_indices, 1, 0, 0, 0);
+                device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
             }
+
+            // draw lines
 
             device.cmdEndRenderPass(command_buffer);
             try device.endCommandBuffer(command_buffer);
@@ -262,8 +296,7 @@ pub const Renderer = struct {
         self.uniform_buffer_mapped_memories = try allocator.alloc(*MVPUniformBufferObject, n_frames);
         // std.debug.print("buffer size is {d}\n", .{buffer_size});
         for (0..n_frames) |i| {
-            self.uniform_buffers[i], self.uniform_buffer_memories[i] = try createBuffer(
-                vk_ctx,
+            self.uniform_buffers[i], self.uniform_buffer_memories[i] = try vk_ctx.createBuffer(
                 MVPUniformBufferObject,
                 1,
                 .{ .uniform_buffer_bit = true },
@@ -319,113 +352,28 @@ pub const Renderer = struct {
         return try vk_ctx.device.createDescriptorSetLayout(&descriptor_set_layout_create_info, null);
     }
 
-    pub fn createMemory(vk_ctx: *const VulkanContext, buffer: vk.Buffer) !vk.DeviceMemory {
-        const memory_requirements = vk_ctx.device.getBufferMemoryRequirements(buffer);
-        const physical_device_memory_properties = vk_ctx.instance.getPhysicalDeviceMemoryProperties(vk_ctx.physical_device);
-        var memory_type_index: ?u32 = null;
-        const memory_types = physical_device_memory_properties.memory_types;
-        const n_memory_types = physical_device_memory_properties.memory_type_count;
-        const memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
-        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
-            if (memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
-                memory_type_index = @truncate(i);
-            }
-        }
-        if (memory_type_index == null) {
-            return error.NoSuitableMemoryType;
-        }
-        const memory_allocate_info = vk.MemoryAllocateInfo{
-            .allocation_size = memory_requirements.size,
-            .memory_type_index = memory_type_index.?,
-        };
-        return try vk_ctx.device.allocateMemory(&memory_allocate_info, null);
-    }
-
-    fn createBuffer(
-        vk_ctx: *const VulkanContext,
-        item_type: type,
-        n_items: usize,
-        usage: vk.BufferUsageFlags,
-    ) !struct { vk.Buffer, vk.DeviceMemory } {
-        const size = n_items * @sizeOf(item_type);
-        const buffer_create_info = vk.BufferCreateInfo{
-            .size = size,
-            .usage = usage,
-            .sharing_mode = .exclusive,
-        };
-        const buffer = try vk_ctx.device.createBuffer(&buffer_create_info, null);
-        const memory = try createMemory(vk_ctx, buffer);
-
-        return .{ buffer, memory };
-    }
-
-    pub fn uploadTriangles(
+    pub fn uploadInstanced(
         self: *Renderer,
         vk_ctx: *const VulkanContext,
+        data_type: InstancedDataType,
         vertices: []const Vertex,
         indices: []const u32,
     ) !void {
-        if (indices.len != self.n_triangle_indices) {
-            const vertex_buffer, const vertex_memory = try createBuffer(
-                vk_ctx,
-                Vertex,
-                vertices.len,
-                .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-            );
-
-            const index_buffer, const index_memory = try createBuffer(
-                vk_ctx,
-                u32,
-                indices.len,
-                .{ .transfer_dst_bit = true, .index_buffer_bit = true },
-            );
-
-            self.triangles_vertex_buffer = vertex_buffer;
-            self.triangle_vertex_memory = vertex_memory;
-            self.triangles_index_buffer = index_buffer;
-            self.triangles_index_memory = index_memory;
-            self.n_triangle_indices = @intCast(indices.len);
+        const instanced_data: *?InstancedData = switch (data_type) {
+            .Points => &self.point_instanced_data,
+            .Lines => &self.line_instanced_data,
+            .Triangles => &self.triangle_instanced_data,
+        };
+        if (instanced_data.* == null or instanced_data.*.?.n_indices != indices.len) {
+            instanced_data.* = try InstancedData.init(vk_ctx, vertices, indices);
         }
-        try uploadData(vk_ctx, Vertex, vertices, self.command_pool, self.triangles_vertex_buffer, self.triangle_vertex_memory);
-        try uploadData(vk_ctx, u32, indices, self.command_pool, self.triangles_index_buffer, self.triangles_index_memory);
+        try transferToDevice(vk_ctx, Vertex, vertices, self.command_pool, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
+        try transferToDevice(vk_ctx, u32, indices, self.command_pool, instanced_data.*.?.index_buffer, instanced_data.*.?.index_memory);
 
         try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
     }
 
-    pub fn uploadPoints(
-        self: *Renderer,
-        vk_ctx: *const VulkanContext,
-        points: []const Vertex,
-        indices: []const u32,
-    ) !void {
-        if (indices.len != self.n_triangle_indices) {
-            const vertex_buffer, const vertex_memory = try createBuffer(
-                vk_ctx,
-                Vertex,
-                points.len,
-                .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-            );
-
-            const index_buffer, const index_memory = try createBuffer(
-                vk_ctx,
-                u32,
-                indices.len,
-                .{ .transfer_dst_bit = true, .index_buffer_bit = true },
-            );
-
-            self.points_vertex_buffer = vertex_buffer;
-            self.points_vertex_memory = vertex_memory;
-            self.points_index_buffer = index_buffer;
-            self.points_index_memory = index_memory;
-            self.n_point_indices = @intCast(indices.len);
-        }
-        try uploadData(vk_ctx, Vertex, points, self.command_pool, self.points_vertex_buffer, self.points_vertex_memory);
-        try uploadData(vk_ctx, u32, indices, self.command_pool, self.points_index_buffer, self.points_index_memory);
-
-        try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
-    }
-
-    fn uploadData(
+    fn transferToDevice(
         vk_ctx: *const VulkanContext,
         comptime T: type,
         data: []const T,
@@ -433,7 +381,7 @@ pub const Renderer = struct {
         buffer: vk.Buffer,
         memory: vk.DeviceMemory,
     ) !void {
-        const staging_buffer, const staging_memory = try createBuffer(vk_ctx, T, data.len, .{ .transfer_src_bit = true });
+        const staging_buffer, const staging_memory = try vk_ctx.createBuffer(T, data.len, .{ .transfer_src_bit = true });
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
 
@@ -933,6 +881,43 @@ pub const VulkanContext = struct {
         }
 
         return framebuffers;
+    }
+
+    fn createBuffer(
+        self: *const VulkanContext,
+        item_type: type,
+        n_items: usize,
+        usage: vk.BufferUsageFlags,
+    ) !struct { vk.Buffer, vk.DeviceMemory } {
+        const size = n_items * @sizeOf(item_type);
+        const buffer_create_info = vk.BufferCreateInfo{
+            .size = size,
+            .usage = usage,
+            .sharing_mode = .exclusive,
+        };
+        const buffer = try self.device.createBuffer(&buffer_create_info, null);
+
+        const memory_requirements = self.device.getBufferMemoryRequirements(buffer);
+        const physical_device_memory_properties = self.instance.getPhysicalDeviceMemoryProperties(self.physical_device);
+        var memory_type_index: ?u32 = null;
+        const memory_types = physical_device_memory_properties.memory_types;
+        const n_memory_types = physical_device_memory_properties.memory_type_count;
+        const memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
+        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
+            if (memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
+                memory_type_index = @truncate(i);
+            }
+        }
+        if (memory_type_index == null) {
+            return error.NoSuitableMemoryType;
+        }
+        const memory_allocate_info = vk.MemoryAllocateInfo{
+            .allocation_size = memory_requirements.size,
+            .memory_type_index = memory_type_index.?,
+        };
+        const memory = try self.device.allocateMemory(&memory_allocate_info, null);
+
+        return .{ buffer, memory };
     }
 };
 

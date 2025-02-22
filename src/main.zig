@@ -111,7 +111,7 @@ pub fn main() !void {
         .{ .x = -5, .y = 5, .z = 0 },
     };
     const scale: f32 = 1.0;
-    var vkVertices = std.mem.zeroes([points.len]vkr.Vertex);
+    var vk_triangle_vertices = std.mem.zeroes([points.len]vkr.Vertex);
 
     for (points, 0..) |point, i| {
         var color = [_]f32{ 0, 0, 0 };
@@ -120,7 +120,7 @@ pub fn main() !void {
         } else {
             color[i] = 1;
         }
-        vkVertices[i] = .{
+        vk_triangle_vertices[i] = .{
             .pos = .{
                 @as(f32, @floatFromInt(point.x)) / scale,
                 @as(f32, @floatFromInt(point.y)) / scale,
@@ -129,9 +129,9 @@ pub fn main() !void {
             .color = color,
         };
     }
-    const indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
+    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
 
-    const vkPointVertices = [_]vkr.Vertex{
+    const vk_point_vertices = [_]vkr.Vertex{
         .{
             .pos = .{ -5, -5, 0 },
             .color = .{ 0, 0.5, 0.5 },
@@ -147,8 +147,8 @@ pub fn main() !void {
     );
     defer vk_ctx.deinit(allocator);
     var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wl_ctx.width), @intCast(wl_ctx.height));
-    try renderer.uploadTriangles(&vk_ctx, &vkVertices, &indices);
-    try renderer.uploadPoints(&vk_ctx, &vkPointVertices, &point_indices);
+    try renderer.uploadInstanced(&vk_ctx, .Points, &vk_point_vertices, &point_indices);
+    try renderer.uploadInstanced(&vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
     defer renderer.deinit(allocator, &vk_ctx);
 
     {
