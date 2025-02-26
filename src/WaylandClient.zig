@@ -3,6 +3,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
 const zxdg = wayland.client.zxdg;
+const wnd = @import("WindowingContext.zig");
 
 const c = @cImport({
     @cInclude("linux/input-event-codes.h");
@@ -16,32 +17,9 @@ const WaylandGlobals = struct {
     zxdg_decoration_manager_v1: ?*zxdg.DecorationManagerV1 = null,
 };
 
-pub const InputState = packed struct {
-    left_button: bool = false,
-    left_button_serial: u32 = 0,
-    middle_button: bool = false,
-    right_button: bool = false,
-    vertical_scroll: f64 = 0,
-    horizontal_scroll: f64 = 0,
-    pointer_x: f64 = 0,
-    pointer_y: f64 = 0,
-    window_moving: bool = false,
-    window_resizing: bool = false,
-    should_close: bool = false,
-};
-
 pub fn WaylandContext(comptime T: type) type {
-    const CallbackType = *const fn (t: T, input_state: InputState) error{}!void;
-
     return struct {
-        callback: CallbackType,
-        t: T,
-        should_exit: bool,
-        should_resize: bool,
-        ready_to_resize: bool,
-        resizing_done: bool,
-        width: i32,
-        height: i32,
+        wnd_ctx: *wnd.WindowingContext(T),
 
         wl_display: *wl.Display,
         wl_registry: *wl.Registry,
@@ -54,9 +32,9 @@ pub fn WaylandContext(comptime T: type) type {
         compositor: *wl.Compositor,
         wm_base: *xdg.WmBase,
 
-        input_state_in_flight: InputState,
+        input_state_in_flight: wnd.InputState,
 
-        pub fn init(self: *WaylandContext(T), t: T, callback: CallbackType, width: i32, height: i32) !void {
+        pub fn init(self: *WaylandContext(T), wnd_ctx: *wnd.WindowingContext(T)) !void {
             const display = try wl.Display.connect(null);
             const registry = try display.getRegistry();
 
@@ -78,24 +56,17 @@ pub fn WaylandContext(comptime T: type) type {
             xdg_toplevel.setTitle("zcad vulkan");
 
             self.* = .{
-                .t = t,
-                .callback = callback,
+                .wnd_ctx = wnd_ctx,
                 .wl_display = display,
                 .wl_registry = registry,
                 .wl_pointer = wl_globals.pointer orelse return error.NoWlPointer,
                 .compositor = wl_compositor,
                 .wm_base = wm_base,
                 .wl_seat = wl_seat,
-                .width = width,
-                .height = height,
                 .wl_surface = surface,
                 .xdg_surface = xdg_surface,
                 .xdg_toplevel = xdg_toplevel,
                 .input_state_in_flight = .{},
-                .should_exit = false,
-                .ready_to_resize = false,
-                .should_resize = false,
-                .resizing_done = false,
             };
 
             self.wl_pointer.setListener(*WaylandContext(T), pointerListener, self);
@@ -125,17 +96,17 @@ pub fn WaylandContext(comptime T: type) type {
         pub fn run(self: *WaylandContext(T)) !bool {
             _ = self.wl_display.dispatchPending();
             if (self.wl_display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
-            if (self.width == 0 or self.height == 0) {
-                // std.debug.print("Current dimensions: width -> {d}, height -> {d}\n", .{ self.width, self.height });
+            if (self.wnd_ctx.width == 0 or self.wnd_ctx.height == 0) {
+                // std.debug.print("Current dimensions: width -> {d}, height -> {d}\n", .{ self.wnd_ctx.width, self.wnd_ctx.height });
                 // std.Thread.sleep(2000000);
                 // smthn smthn poll events?
                 // std.debug.print("Done with roundtrip\n", .{});
                 return false;
             }
-            if (self.should_resize and self.resizing_done) {
-                self.ready_to_resize = false;
-                self.should_resize = false;
-                self.resizing_done = false;
+            if (self.wnd_ctx.should_resize and self.wnd_ctx.resizing_done) {
+                self.wnd_ctx.ready_to_resize = false;
+                self.wnd_ctx.should_resize = false;
+                self.wnd_ctx.resizing_done = false;
 
                 self.wl_surface.commit();
             }
@@ -227,8 +198,8 @@ pub fn WaylandContext(comptime T: type) type {
                     const x = ctx.input_state_in_flight.pointer_x;
                     const y = ctx.input_state_in_flight.pointer_y;
                     const drag_size: f64 = 15;
-                    const right_edge = @as(f64, @floatFromInt(ctx.width)) - drag_size;
-                    const bottom_edge = @as(f64, @floatFromInt(ctx.height)) - drag_size;
+                    const right_edge = @as(f64, @floatFromInt(ctx.wnd_ctx.width)) - drag_size;
+                    const bottom_edge = @as(f64, @floatFromInt(ctx.wnd_ctx.height)) - drag_size;
                     if (window_moving and ctx.input_state_in_flight.left_button == false) {
                         ctx.input_state_in_flight.window_moving = false;
                     }
@@ -296,7 +267,7 @@ pub fn WaylandContext(comptime T: type) type {
                             );
                         }
                     }
-                    try ctx.callback(ctx.t, ctx.input_state_in_flight);
+                    try ctx.wnd_ctx.callback(ctx.wnd_ctx.t, ctx.input_state_in_flight);
                     ctx.input_state_in_flight.vertical_scroll = 0;
                     ctx.input_state_in_flight.horizontal_scroll = 0;
                 },
@@ -308,8 +279,8 @@ pub fn WaylandContext(comptime T: type) type {
             switch (event) {
                 .configure => |configure| {
                     ctx.wl_surface.commit();
-                    if (ctx.should_resize) {
-                        ctx.ready_to_resize = true;
+                    if (ctx.wnd_ctx.should_resize) {
+                        ctx.wnd_ctx.ready_to_resize = true;
                     }
                     xdg_surface.ackConfigure(configure.serial);
                 },
@@ -320,12 +291,12 @@ pub fn WaylandContext(comptime T: type) type {
             switch (event) {
                 .configure => |conf| {
                     if (conf.width > 0 and conf.height > 0) {
-                        ctx.width = conf.width;
-                        ctx.height = conf.height;
-                        ctx.should_resize = true;
+                        ctx.wnd_ctx.width = conf.width;
+                        ctx.wnd_ctx.height = conf.height;
+                        ctx.wnd_ctx.should_resize = true;
                     }
                 },
-                .close => ctx.should_exit = true,
+                .close => ctx.wnd_ctx.should_exit = true,
             }
         }
 

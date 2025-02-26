@@ -1,12 +1,13 @@
 const std = @import("std");
 const wl = @import("WaylandClient.zig");
 const vkr = @import("VulkanRenderer.zig");
+const wnd = @import("WindowingContext.zig");
 const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
 
 const AppContext = struct {
-    prev_input_state: wl.InputState,
+    prev_input_state: wnd.InputState,
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
@@ -14,7 +15,7 @@ const AppContext = struct {
     should_exit: bool,
 };
 
-pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
+pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     if (input_state.should_close) {
         app_ctx.should_exit = true;
         return;
@@ -129,7 +130,7 @@ pub fn main() !void {
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
-        .prev_input_state = wl.InputState{},
+        .prev_input_state = wnd.InputState{},
         .eye = eye,
         .focus_point = focus_point,
         .up = up,
@@ -141,6 +142,21 @@ pub fn main() !void {
         .should_exit = false,
     };
 
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+    // skip first arg, which is program name
+    _ = args.next();
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--use-x11")) {
+            std.debug.print("got arg: {s}\n", .{arg});
+        } else {
+            std.debug.print("unrecognized arg: {s}\n", .{arg});
+            return error.UnrecognizedArgument;
+        }
+    }
+    // Windowing
+    var wnd_ctx = wnd.WindowingContext(*AppContext).init(&app_ctx, InputCallback, 680, 420);
+
     // X11
     // const x11_ctx = try x11.X11Context.init(680, 420);
     // defer x11_ctx.deinit();
@@ -148,7 +164,21 @@ pub fn main() !void {
     // Wayland
     var wl_ctx = try allocator.create(wl.WaylandContext(*AppContext));
     defer allocator.destroy(wl_ctx);
-    try wl_ctx.init(&app_ctx, InputCallback, 680, 420);
+    try wl_ctx.init(&wnd_ctx);
+
+    // vulkan
+    const vk_ctx = try vkr.VulkanContext.init(
+        allocator,
+        vkr.WindowingInfo{
+            .wayland = .{
+                .wl_display = @ptrCast(wl_ctx.wl_display),
+                .wl_surface = @ptrCast(wl_ctx.wl_surface),
+            },
+        },
+    );
+    defer vk_ctx.deinit(allocator);
+    var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wnd_ctx.width), @intCast(wnd_ctx.height));
+    defer renderer.deinit(allocator, &vk_ctx);
 
     // zcad
     const vk_triangle_vertices = [_]vkr.Vertex{
@@ -212,28 +242,19 @@ pub fn main() !void {
     );
     const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 };
 
-    // vulkan
-    const vk_ctx = try vkr.VulkanContext.init(
-        allocator,
-        @ptrCast(wl_ctx.wl_display),
-        @ptrCast(wl_ctx.wl_surface),
-    );
-    defer vk_ctx.deinit(allocator);
-    var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wl_ctx.width), @intCast(wl_ctx.height));
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, &vk_line_vertices, &line_indices);
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
-    defer renderer.deinit(allocator, &vk_ctx);
 
     {
-        const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+        const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
     }
-    while ((!wl_ctx.should_exit) and (!app_ctx.should_exit)) {
-        if (wl_ctx.should_resize) {
-            const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
+    while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
+        if (wnd_ctx.should_resize) {
+            const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
             app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
-            wl_ctx.resizing_done = true;
+            wnd_ctx.resizing_done = true;
         }
 
         const should_render = try wl_ctx.run();
@@ -243,8 +264,8 @@ pub fn main() !void {
         try renderer.render(
             allocator,
             &vk_ctx,
-            @intCast(wl_ctx.width),
-            @intCast(wl_ctx.height),
+            @intCast(wnd_ctx.width),
+            @intCast(wnd_ctx.height),
             &app_ctx.mvp_ubo,
         );
     }

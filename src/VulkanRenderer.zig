@@ -555,6 +555,25 @@ pub const Renderer = struct {
     }
 };
 
+pub const WindowingType = enum {
+    xlib,
+    wayland,
+};
+pub const WaylandWindowing = struct {
+    wl_display: *vk.wl_display,
+    wl_surface: *vk.wl_surface,
+};
+pub const WindowingInfo = union(WindowingType) {
+    xlib: struct {
+        x11_display: *vk.Display,
+        x11_window: vk.Window,
+    },
+    wayland: struct {
+        wl_display: *vk.wl_display,
+        wl_surface: *vk.wl_surface,
+    },
+};
+
 pub const VulkanContext = struct {
     // vulkan
     const _apis: []const vk.ApiInfo = &.{
@@ -565,7 +584,7 @@ pub const VulkanContext = struct {
         vk.extensions.khr_surface,
         vk.extensions.khr_swapchain,
         vk.extensions.khr_wayland_surface,
-        // vk.extensions.khr_xlib_surface,
+        vk.extensions.khr_xlib_surface,
         // vk.extensions.ext_debug_utils,
     };
 
@@ -593,8 +612,7 @@ pub const VulkanContext = struct {
     graphics_queue: vk.Queue,
     presentation_queue: vk.Queue,
 
-    // pub fn init(allocator: std.mem.Allocator, x11_display: *vk.Display, x11_window: vk.Window) !VulkanContext {
-    pub fn init(allocator: std.mem.Allocator, wl_display: *vk.wl_display, wl_surface: *vk.wl_surface) !VulkanContext {
+    pub fn init(allocator: std.mem.Allocator, windowing_info: WindowingInfo) !VulkanContext {
         // TODO: try (again) to see if we can do this without linking vulkan and
         // importing the c-thing, e.g. can we do this in pure zig.
         const get_instance_proc_addr: vk.PfnGetInstanceProcAddr = @extern(vk.PfnGetInstanceProcAddr, .{
@@ -615,7 +633,7 @@ pub const VulkanContext = struct {
         const instance_extensions = [_][*:0]const u8{
             vk.extensions.khr_surface.name,
             vk.extensions.khr_wayland_surface.name,
-            // vk.extensions.khr_xlib_surface.name,
+            vk.extensions.khr_xlib_surface.name,
             // vk.extensions.ext_debug_utils.name,
         };
         const enabled_layers = if (builtin.mode == .Debug)
@@ -638,6 +656,12 @@ pub const VulkanContext = struct {
         const instance = Instance.init(instance_handle, instance_dispatch);
         errdefer instance.destroyInstance(null);
 
+        const surface = switch (windowing_info) {
+            .xlib => |info| try instance.createXlibSurfaceKHR(&.{ .dpy = info.x11_display, .window = info.x11_window }, null),
+            .wayland => |info| try instance.createWaylandSurfaceKHR(&.{ .display = info.wl_display, .surface = info.wl_surface }, null),
+        };
+        errdefer instance.destroySurfaceKHR(surface, null);
+
         // const debug_util_messenger_create_info = vk.DebugUtilsMessengerCreateInfoEXT{
         //     .message_severity = .{ .verbose_bit_ext = true, .warning_bit_ext = true, .error_bit_ext = true, .info_bit_ext = true },
         //     .message_type = .{ .general_bit_ext = true, .validation_bit_ext = true, .performance_bit_ext = true },
@@ -646,19 +670,6 @@ pub const VulkanContext = struct {
         // };
         // const debug_messenger = try instance.createDebugUtilsMessengerEXT(&debug_util_messenger_create_info, null);
         // defer instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
-
-        const create_wayland_surface_info = vk.WaylandSurfaceCreateInfoKHR{
-            .display = wl_display,
-            .surface = wl_surface,
-        };
-        const surface = try instance.createWaylandSurfaceKHR(&create_wayland_surface_info, null);
-        // const create_x11_surface_info = vk.XlibSurfaceCreateInfoKHR{
-        //     .flags = .{},
-        //     .dpy = x11_display,
-        //     .window = x11_window,
-        // };
-        // const surface = try instance.createXlibSurfaceKHR(&create_x11_surface_info, null);
-        errdefer instance.destroySurfaceKHR(surface, null);
 
         const required_device_extensions = [_][*:0]const u8{
             vk.extensions.khr_swapchain.name,
