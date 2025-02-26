@@ -177,7 +177,7 @@ pub fn main() !void {
             .color = .{ 0, 0, 1 },
         },
     };
-    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
+    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 4, 1, 2, 4, 2, 5 };
 
     const vk_point_vertices = [_]vkr.Vertex{
         .{
