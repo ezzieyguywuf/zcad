@@ -2,7 +2,11 @@ const std = @import("std");
 
 const Scanner = @import("zig-wayland").Scanner;
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -35,6 +39,7 @@ pub fn build(b: *std.Build) void {
     // if (b.systemIntegrationOption("zcad", .{})) {
     exe.linkSystemLibrary("vulkan");
     exe.linkSystemLibrary("wayland-client");
+    exe.linkSystemLibrary("x11");
 
     exe.linkLibC();
 
@@ -50,49 +55,13 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const vert_cmd = b.addSystemCommand(&.{
-        "glslc",
-        "--target-env=vulkan1.2",
-        "-o",
-    });
-    const vert_spv = vert_cmd.addOutputFileArg("vert.spv");
-    vert_cmd.addFileArg(b.path("shaders/triangle.vert"));
-    exe.root_module.addAnonymousImport("vertex_shader", .{
-        .root_source_file = vert_spv,
-    });
+    try addShader(allocator, b, exe, "vertex_shader", "shaders/triangle.vert");
+    try addShader(allocator, b, exe, "fragment_shader", "shaders/triangle.frag");
+    try addShader(allocator, b, exe, "circle_vertex_shader", "shaders/circle.vert");
+    try addShader(allocator, b, exe, "circle_fragment_shader", "shaders/circle.frag");
+    try addShader(allocator, b, exe, "line_vertex_shader", "shaders/line.vert");
+    try addShader(allocator, b, exe, "line_fragment_shader", "shaders/triangle.frag");
 
-    const frag_cmd = b.addSystemCommand(&.{
-        "glslc",
-        "--target-env=vulkan1.2",
-        "-o",
-    });
-    const frag_spv = frag_cmd.addOutputFileArg("frag.spv");
-    frag_cmd.addFileArg(b.path("shaders/triangle.frag"));
-    exe.root_module.addAnonymousImport("fragment_shader", .{
-        .root_source_file = frag_spv,
-    });
-
-    const circle_vert_cmd = b.addSystemCommand(&.{
-        "glslc",
-        "--target-env=vulkan1.2",
-        "-o",
-    });
-    const circle_vert_spv = circle_vert_cmd.addOutputFileArg("circle_vert.spv");
-    circle_vert_cmd.addFileArg(b.path("shaders/circle.vert"));
-    exe.root_module.addAnonymousImport("circle_vertex_shader", .{
-        .root_source_file = circle_vert_spv,
-    });
-
-    const circle_frag_cmd = b.addSystemCommand(&.{
-        "glslc",
-        "--target-env=vulkan1.2",
-        "-o",
-    });
-    const circle_frag_spv = circle_frag_cmd.addOutputFileArg("circle_frag.spv");
-    circle_frag_cmd.addFileArg(b.path("shaders/circle.frag"));
-    exe.root_module.addAnonymousImport("circle_fragment_shader", .{
-        .root_source_file = circle_frag_spv,
-    });
     const test_filter = b.option([]const u8, "test-filter", "Filter for test");
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
@@ -105,4 +74,25 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+}
+
+fn addShader(
+    allocator: std.mem.Allocator,
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
+    import_name: []const u8,
+    path: []const u8,
+) !void {
+    const cmd = b.addSystemCommand(&.{
+        "glslc",
+        "--target-env=vulkan1.2",
+        "-o",
+    });
+    const output_file_name = try std.fmt.allocPrint(allocator, "{s}.spv", .{import_name});
+    defer allocator.free(output_file_name);
+    const spv = cmd.addOutputFileArg(output_file_name);
+    cmd.addFileArg(b.path(path));
+    exe.root_module.addAnonymousImport(import_name, .{
+        .root_source_file = spv,
+    });
 }

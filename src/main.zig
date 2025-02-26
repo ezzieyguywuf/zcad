@@ -1,6 +1,7 @@
 const std = @import("std");
 const wl = @import("WaylandClient.zig");
 const vkr = @import("VulkanRenderer.zig");
+const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
 
@@ -64,6 +65,48 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wl.InputState) !void {
     app_ctx.prev_input_state.horizontal_scroll = 0;
 }
 
+fn makeLine(
+    left_pos: [3]f32,
+    right_pos: [3]f32,
+    left_color: [3]f32,
+    right_color: [3]f32,
+) [4]vkr.Line {
+    return .{
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = true,
+            .up = false,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = false,
+            .up = true,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = true,
+            .up = true,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = false,
+            .up = false,
+        },
+    };
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -93,10 +136,14 @@ pub fn main() !void {
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.01, 10000.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.0001, 10000.0),
         },
         .should_exit = false,
     };
+
+    // X11
+    // const x11_ctx = try x11.X11Context.init(680, 420);
+    // defer x11_ctx.deinit();
 
     // Wayland
     var wl_ctx = try allocator.create(wl.WaylandContext(*AppContext));
@@ -104,31 +151,32 @@ pub fn main() !void {
     try wl_ctx.init(&app_ctx, InputCallback, 680, 420);
 
     // zcad
-    const points = [_]Point{
-        .{ .x = -5, .y = -5, .z = 0 },
-        .{ .x = 5, .y = -5, .z = 0 },
-        .{ .x = 5, .y = 5, .z = 0 },
-        .{ .x = -5, .y = 5, .z = 0 },
+    const vk_triangle_vertices = [_]vkr.Vertex{
+        .{
+            .pos = .{ -5, -5, 0 },
+            .color = .{ 1, 1, 0 },
+        },
+        .{
+            .pos = .{ 5, -5, 0 },
+            .color = .{ 1, 1, 0 },
+        },
+        .{
+            .pos = .{ 5, 5, 0 },
+            .color = .{ 1, 1, 0 },
+        },
+        .{
+            .pos = .{ -5, 5, 0 },
+            .color = .{ 1, 1, 0 },
+        },
+        .{
+            .pos = .{ -5, -5, -5 },
+            .color = .{ 0, 0, 1 },
+        },
+        .{
+            .pos = .{ 5, -5, -5 },
+            .color = .{ 0, 0, 1 },
+        },
     };
-    const scale: f32 = 1.0;
-    var vk_triangle_vertices = std.mem.zeroes([points.len]vkr.Vertex);
-
-    for (points, 0..) |point, i| {
-        var color = [_]f32{ 0, 0, 0 };
-        if (i == 3) {
-            color = [_]f32{ 1, 1, 1 };
-        } else {
-            color[i] = 1;
-        }
-        vk_triangle_vertices[i] = .{
-            .pos = .{
-                @as(f32, @floatFromInt(point.x)) / scale,
-                @as(f32, @floatFromInt(point.y)) / scale,
-                @as(f32, @floatFromInt(point.z)) / scale,
-            },
-            .color = color,
-        };
-    }
     const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0 };
 
     const vk_point_vertices = [_]vkr.Vertex{
@@ -136,8 +184,33 @@ pub fn main() !void {
             .pos = .{ -5, -5, 0 },
             .color = .{ 0, 0.5, 0.5 },
         },
+        .{
+            .pos = .{ 5, -5, 0 },
+            .color = .{ 0, 0.5, 0.5 },
+        },
+        .{
+            .pos = .{ 5, -5, 5 },
+            .color = .{ 1, 0.5, 0.5 },
+        },
+        .{
+            .pos = .{ 5, -5, -5 },
+            .color = .{ 1, 1.0, 0.5 },
+        },
     };
-    const point_indices = [_]u32{0};
+    const point_indices = [_]u32{ 0, 1, 2 };
+
+    const vk_line_vertices = makeLine(
+        .{ -5, -5, 0 },
+        .{ 5, -5, 0 },
+        .{ 0, 0, 0 },
+        .{ 0, 0, 0 },
+    ) ++ makeLine(
+        .{ 5, -5, 0 },
+        .{ 5, 5, 0 },
+        .{ 0, 0, 0 },
+        .{ 0, 0, 0 },
+    );
+    const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 };
 
     // vulkan
     const vk_ctx = try vkr.VulkanContext.init(
@@ -147,18 +220,19 @@ pub fn main() !void {
     );
     defer vk_ctx.deinit(allocator);
     var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wl_ctx.width), @intCast(wl_ctx.height));
-    try renderer.uploadInstanced(&vk_ctx, .Points, &vk_point_vertices, &point_indices);
-    try renderer.uploadInstanced(&vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
+    try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, &vk_line_vertices, &line_indices);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
     defer renderer.deinit(allocator, &vk_ctx);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
-        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 10000.0);
+        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
     }
     while ((!wl_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (wl_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wl_ctx.width)) / @as(f32, @floatFromInt(wl_ctx.height));
-            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.01, 10000.0);
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
             wl_ctx.resizing_done = true;
         }
 

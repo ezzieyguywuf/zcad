@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
-const wl = @import("WaylandClient.zig");
 const zm = @import("zmath");
 const c = @cImport({
     @cInclude("vulkan/vulkan.h");
@@ -16,14 +15,14 @@ const InstancedData = struct {
     index_memory: vk.DeviceMemory,
     n_indices: u32,
 
-    pub fn init(vk_ctx: *const VulkanContext, vertices: []const Vertex, indices: []const u32) !InstancedData {
+    pub fn init(T: type, vk_ctx: *const VulkanContext, vertices: []const T, indices: []const u32) !InstancedData {
         const vertex_buffer, const vertex_memory = try vk_ctx.createBuffer(
-            Vertex,
+            T,
             vertices.len,
             .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         );
         const index_buffer, const index_memory = try vk_ctx.createBuffer(
-            Vertex,
+            @TypeOf(indices[0]),
             indices.len,
             .{ .transfer_dst_bit = true, .index_buffer_bit = true },
         );
@@ -49,8 +48,9 @@ pub const Renderer = struct {
     swapchain: Swapchain,
     render_pass: vk.RenderPass,
     pipeline_layout: vk.PipelineLayout,
-    pipeline: vk.Pipeline,
+    triangle_pipeline: vk.Pipeline,
     circle_pipeline: vk.Pipeline,
+    line_pipeline: vk.Pipeline,
     command_pool: vk.CommandPool,
     descriptor_pool: vk.DescriptorPool,
     framebuffers: []vk.Framebuffer,
@@ -61,9 +61,13 @@ pub const Renderer = struct {
     line_instanced_data: ?InstancedData,
     triangle_instanced_data: ?InstancedData,
 
-    uniform_buffers: []vk.Buffer,
-    uniform_buffer_memories: []vk.DeviceMemory,
-    uniform_buffer_mapped_memories: []*MVPUniformBufferObject,
+    mvp_uniform_buffers: []vk.Buffer,
+    mvp_uniform_buffer_memories: []vk.DeviceMemory,
+    mvp_uniform_buffer_mapped_memories: []*MVPUniformBufferObject,
+
+    line_uniform_buffers: []vk.Buffer,
+    line_uniform_buffer_memories: []vk.DeviceMemory,
+    line_uniform_buffer_mapped_memories: []*LineUniformBufferObject,
 
     width: u32,
     height: u32,
@@ -71,7 +75,7 @@ pub const Renderer = struct {
     pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
-        const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format);
+        const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format, swapchain.depth_format);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
         errdefer allocator.free(command_buffers);
@@ -87,7 +91,7 @@ pub const Renderer = struct {
         };
         const pipeline_layout = try vk_ctx.device.createPipelineLayout(&pipeline_layout_create_info, null);
 
-        const pipeline = try vk_ctx.createPipeline(
+        const triangle_pipeline = try vk_ctx.createPipeline(
             "vertex_shader",
             "fragment_shader",
             .triangle_list,
@@ -101,6 +105,15 @@ pub const Renderer = struct {
             "circle_fragment_shader",
             .point_list,
             true,
+            pipeline_layout,
+            render_pass,
+        );
+
+        const line_pipeline = try vk_ctx.createPipeline(
+            "line_vertex_shader",
+            "line_fragment_shader",
+            .triangle_list,
+            false,
             pipeline_layout,
             render_pass,
         );
@@ -137,16 +150,20 @@ pub const Renderer = struct {
             .render_pass = render_pass,
             .framebuffers = framebuffers,
             .pipeline_layout = pipeline_layout,
-            .pipeline = pipeline,
+            .triangle_pipeline = triangle_pipeline,
             .circle_pipeline = circle_pipeline,
+            .line_pipeline = line_pipeline,
             .command_pool = command_pool,
             .descriptor_pool = descriptor_pool,
             .point_instanced_data = null,
             .line_instanced_data = null,
             .triangle_instanced_data = null,
-            .uniform_buffers = undefined,
-            .uniform_buffer_memories = undefined,
-            .uniform_buffer_mapped_memories = undefined,
+            .mvp_uniform_buffers = undefined,
+            .mvp_uniform_buffer_memories = undefined,
+            .mvp_uniform_buffer_mapped_memories = undefined,
+            .line_uniform_buffers = undefined,
+            .line_uniform_buffer_memories = undefined,
+            .line_uniform_buffer_mapped_memories = undefined,
             .command_buffers = command_buffers,
             .descriptor_sets = descriptor_sets,
             .width = width,
@@ -166,7 +183,12 @@ pub const Renderer = struct {
     pub fn deinit(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) void {
         self.swapchain.deinit(allocator, vk_ctx);
         vk_ctx.device.destroyRenderPass(self.render_pass, null);
-        for (self.uniform_buffers, self.uniform_buffer_memories) |uniform_buffer, uniform_buffer_memory| {
+        for (self.mvp_uniform_buffers, self.mvp_uniform_buffer_memories) |uniform_buffer, uniform_buffer_memory| {
+            vk_ctx.device.destroyBuffer(uniform_buffer, null);
+            vk_ctx.device.unmapMemory(uniform_buffer_memory);
+            vk_ctx.device.freeMemory(uniform_buffer_memory, null);
+        }
+        for (self.line_uniform_buffers, self.line_uniform_buffer_memories) |uniform_buffer, uniform_buffer_memory| {
             vk_ctx.device.destroyBuffer(uniform_buffer, null);
             vk_ctx.device.unmapMemory(uniform_buffer_memory);
             vk_ctx.device.freeMemory(uniform_buffer_memory, null);
@@ -189,17 +211,21 @@ pub const Renderer = struct {
         }
         std.debug.print("done Checking instanced datas\n", .{});
 
-        vk_ctx.device.destroyPipeline(self.pipeline, null);
+        vk_ctx.device.destroyPipeline(self.triangle_pipeline, null);
         vk_ctx.device.destroyPipeline(self.circle_pipeline, null);
+        vk_ctx.device.destroyPipeline(self.line_pipeline, null);
         vk_ctx.device.destroyPipelineLayout(self.pipeline_layout, null);
         vk_ctx.device.destroyDescriptorPool(self.descriptor_pool, null);
         vk_ctx.device.freeCommandBuffers(self.command_pool, @truncate(self.command_buffers.len), self.command_buffers.ptr);
         vk_ctx.device.destroyCommandPool(self.command_pool, null);
 
         allocator.free(self.command_buffers);
-        allocator.free(self.uniform_buffers);
-        allocator.free(self.uniform_buffer_memories);
-        allocator.free(self.uniform_buffer_mapped_memories);
+        allocator.free(self.mvp_uniform_buffers);
+        allocator.free(self.mvp_uniform_buffer_memories);
+        allocator.free(self.mvp_uniform_buffer_mapped_memories);
+        allocator.free(self.line_uniform_buffers);
+        allocator.free(self.line_uniform_buffer_memories);
+        allocator.free(self.line_uniform_buffer_mapped_memories);
         allocator.free(self.descriptor_sets);
         allocator.free(self.framebuffers);
     }
@@ -217,9 +243,16 @@ pub const Renderer = struct {
         try device.allocateCommandBuffers(&command_buffer_allocate_info, self.command_buffers.ptr);
         errdefer device.freeCommandBuffers(self.command_pool, @intCast(self.command_buffers.len), self.command_buffers.ptr);
 
-        const clear = vk.ClearValue{
+        const color_clear = vk.ClearValue{
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
         };
+        const depth_clear = vk.ClearValue{
+            .depth_stencil = .{
+                .depth = 1.0,
+                .stencil = 0,
+            },
+        };
+        const clear_values = [_]vk.ClearValue{ color_clear, depth_clear };
 
         const viewport = vk.Viewport{
             .x = 0,
@@ -255,17 +288,32 @@ pub const Renderer = struct {
                 .render_pass = self.render_pass,
                 .framebuffer = framebuffer,
                 .render_area = render_area,
-                .clear_value_count = 1,
-                .p_clear_values = @ptrCast(&clear),
+                .clear_value_count = clear_values.len,
+                .p_clear_values = &clear_values,
             }, .@"inline");
 
             const offset = [_]vk.DeviceSize{0};
             // Draw triangles
             if (self.triangle_instanced_data) |data| {
-                device.cmdBindPipeline(command_buffer, .graphics, self.pipeline);
+                device.cmdBindPipeline(command_buffer, .graphics, self.triangle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                // TODO: is there a way to _not_ bind this? it's nonsensical
+                // since the Vertex buffer doesn't match up with the
+                // BindingDescription of the Line type.
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+                device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
+            }
+
+            // draw lines
+            if (self.line_instanced_data) |data| {
+                device.cmdBindPipeline(command_buffer, .graphics, self.line_pipeline);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+                // device.cmdDraw(command_buffer, 1, 6, 0, 0);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
             }
 
@@ -273,6 +321,7 @@ pub const Renderer = struct {
             if (self.point_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
@@ -291,30 +340,56 @@ pub const Renderer = struct {
         vk_ctx: *const VulkanContext,
         n_frames: usize,
     ) !void {
-        self.uniform_buffers = try allocator.alloc(vk.Buffer, n_frames);
-        self.uniform_buffer_memories = try allocator.alloc(vk.DeviceMemory, n_frames);
-        self.uniform_buffer_mapped_memories = try allocator.alloc(*MVPUniformBufferObject, n_frames);
+        self.mvp_uniform_buffers = try allocator.alloc(vk.Buffer, n_frames);
+        self.mvp_uniform_buffer_memories = try allocator.alloc(vk.DeviceMemory, n_frames);
+        self.mvp_uniform_buffer_mapped_memories = try allocator.alloc(*MVPUniformBufferObject, n_frames);
+
+        self.line_uniform_buffers = try allocator.alloc(vk.Buffer, n_frames);
+        self.line_uniform_buffer_memories = try allocator.alloc(vk.DeviceMemory, n_frames);
+        self.line_uniform_buffer_mapped_memories = try allocator.alloc(*LineUniformBufferObject, n_frames);
         // std.debug.print("buffer size is {d}\n", .{buffer_size});
         for (0..n_frames) |i| {
-            self.uniform_buffers[i], self.uniform_buffer_memories[i] = try vk_ctx.createBuffer(
+            self.mvp_uniform_buffers[i], self.mvp_uniform_buffer_memories[i] = try vk_ctx.createBuffer(
                 MVPUniformBufferObject,
                 1,
                 .{ .uniform_buffer_bit = true },
             );
-            const host_data = try vk_ctx.device.mapMemory(self.uniform_buffer_memories[i], 0, 1, .{});
+            const mvp_host_data = try vk_ctx.device.mapMemory(self.mvp_uniform_buffer_memories[i], 0, 1, .{});
             // gpu_data
-            self.uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(host_data));
+            self.mvp_uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(mvp_host_data));
             try vk_ctx.device.bindBufferMemory(
-                self.uniform_buffers[i],
-                self.uniform_buffer_memories[i],
+                self.mvp_uniform_buffers[i],
+                self.mvp_uniform_buffer_memories[i],
                 0,
             );
 
-            const descriptor_buffer_info = vk.DescriptorBufferInfo{
-                .buffer = self.uniform_buffers[i],
-                .offset = 0,
-                .range = @sizeOf(MVPUniformBufferObject),
+            self.line_uniform_buffers[i], self.line_uniform_buffer_memories[i] = try vk_ctx.createBuffer(
+                LineUniformBufferObject,
+                1,
+                .{ .uniform_buffer_bit = true },
+            );
+            const line_host_data = try vk_ctx.device.mapMemory(self.line_uniform_buffer_memories[i], 0, 1, .{});
+            // gpu_data
+            self.line_uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(line_host_data));
+            try vk_ctx.device.bindBufferMemory(
+                self.line_uniform_buffers[i],
+                self.line_uniform_buffer_memories[i],
+                0,
+            );
+
+            const descriptor_buffer_infos = [_]vk.DescriptorBufferInfo{
+                .{
+                    .buffer = self.mvp_uniform_buffers[i],
+                    .offset = 0,
+                    .range = @sizeOf(MVPUniformBufferObject),
+                },
+                .{
+                    .buffer = self.line_uniform_buffers[i],
+                    .offset = 0,
+                    .range = @sizeOf(LineUniformBufferObject),
+                },
             };
+
             // Since p_image_info and p_texel_buffer aren't implemented by
             // vulkav-zig as `?[*]....`, we _have_ to specify something, so here
             // goes.
@@ -328,8 +403,8 @@ pub const Renderer = struct {
                 .dst_binding = 0,
                 .dst_array_element = 0,
                 .descriptor_type = .uniform_buffer,
-                .descriptor_count = 1,
-                .p_buffer_info = &.{descriptor_buffer_info},
+                .descriptor_count = descriptor_buffer_infos.len,
+                .p_buffer_info = &descriptor_buffer_infos,
                 .p_image_info = &.{descriptor_image_info},
                 .p_texel_buffer_view = &.{.null_handle},
             };
@@ -338,25 +413,32 @@ pub const Renderer = struct {
     }
 
     pub fn setupDescriptors(vk_ctx: *const VulkanContext) !vk.DescriptorSetLayout {
-        const uniform_binding = vk.DescriptorSetLayoutBinding{
+        const mvp_uniform_binding = vk.DescriptorSetLayoutBinding{
             .binding = 0,
+            .descriptor_type = vk.DescriptorType.uniform_buffer,
+            .descriptor_count = 1,
+            .stage_flags = .{ .vertex_bit = true },
+        };
+        const line_uniform_binding = vk.DescriptorSetLayoutBinding{
+            .binding = 1,
             .descriptor_type = vk.DescriptorType.uniform_buffer,
             .descriptor_count = 1,
             .stage_flags = .{ .vertex_bit = true },
         };
 
         const descriptor_set_layout_create_info = vk.DescriptorSetLayoutCreateInfo{
-            .binding_count = 1,
-            .p_bindings = &.{uniform_binding},
+            .binding_count = 2,
+            .p_bindings = &.{ mvp_uniform_binding, line_uniform_binding },
         };
         return try vk_ctx.device.createDescriptorSetLayout(&descriptor_set_layout_create_info, null);
     }
 
     pub fn uploadInstanced(
         self: *Renderer,
+        T: type,
         vk_ctx: *const VulkanContext,
         data_type: InstancedDataType,
-        vertices: []const Vertex,
+        vertices: []const T,
         indices: []const u32,
     ) !void {
         const instanced_data: *?InstancedData = switch (data_type) {
@@ -365,9 +447,9 @@ pub const Renderer = struct {
             .Triangles => &self.triangle_instanced_data,
         };
         if (instanced_data.* == null or instanced_data.*.?.n_indices != indices.len) {
-            instanced_data.* = try InstancedData.init(vk_ctx, vertices, indices);
+            instanced_data.* = try InstancedData.init(T, vk_ctx, vertices, indices);
         }
-        try transferToDevice(vk_ctx, Vertex, vertices, self.command_pool, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
+        try transferToDevice(vk_ctx, T, vertices, self.command_pool, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
         try transferToDevice(vk_ctx, u32, indices, self.command_pool, instanced_data.*.?.index_buffer, instanced_data.*.?.index_memory);
 
         try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
@@ -433,9 +515,21 @@ pub const Renderer = struct {
         mvp_ubo: *const MVPUniformBufferObject,
     ) !void {
         const command_buffer = self.command_buffers[self.swapchain.current_image_index];
-        const gpu_data: [*]MVPUniformBufferObject = @ptrCast(@alignCast(self.uniform_buffer_mapped_memories[self.swapchain.current_image_index]));
-        const data = [1]MVPUniformBufferObject{mvp_ubo.*};
-        @memcpy(gpu_data, &data);
+        {
+            const gpu_data: [*]MVPUniformBufferObject = @ptrCast(@alignCast(self.mvp_uniform_buffer_mapped_memories[self.swapchain.current_image_index]));
+            const data = [1]MVPUniformBufferObject{mvp_ubo.*};
+            @memcpy(gpu_data, &data);
+        }
+        {
+            const gpu_data: [*]LineUniformBufferObject = @ptrCast(@alignCast(self.line_uniform_buffer_mapped_memories[self.swapchain.current_image_index]));
+            const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
+            // std.debug.print("aspect_ratio: {d:3}\n", .{aspect_ratio});
+            const data = [1]LineUniformBufferObject{.{
+                .aspect_ratio = aspect_ratio,
+                .line_thickness = 0.25,
+            }};
+            @memcpy(gpu_data, &data);
+        }
         const state = self.swapchain.present(vk_ctx, command_buffer) catch |err| switch (err) {
             error.OutOfDateKHR => Swapchain.PresentState.suboptimal,
             else => |narrow| return narrow,
@@ -471,7 +565,8 @@ pub const VulkanContext = struct {
         vk.extensions.khr_surface,
         vk.extensions.khr_swapchain,
         vk.extensions.khr_wayland_surface,
-        vk.extensions.ext_debug_utils,
+        // vk.extensions.khr_xlib_surface,
+        // vk.extensions.ext_debug_utils,
     };
 
     // These are types: they contain functions that e.g. require you to provide the
@@ -498,6 +593,7 @@ pub const VulkanContext = struct {
     graphics_queue: vk.Queue,
     presentation_queue: vk.Queue,
 
+    // pub fn init(allocator: std.mem.Allocator, x11_display: *vk.Display, x11_window: vk.Window) !VulkanContext {
     pub fn init(allocator: std.mem.Allocator, wl_display: *vk.wl_display, wl_surface: *vk.wl_surface) !VulkanContext {
         // TODO: try (again) to see if we can do this without linking vulkan and
         // importing the c-thing, e.g. can we do this in pure zig.
@@ -516,17 +612,12 @@ pub const VulkanContext = struct {
 
         // TODO: add checks to ensure the requested extensions are supported, see
         // https://vulkan-tutorial.com/en/Drawing_a_triangle/Setup/Validation_layers
-        const instance_extensions = if (builtin.mode == .Debug)
-            [_][*:0]const u8{
-                vk.extensions.khr_surface.name,
-                vk.extensions.khr_wayland_surface.name,
-                vk.extensions.ext_debug_utils.name,
-            }
-        else
-            [_][*:0]const u8{
-                vk.extensions.khr_surface.name,
-                vk.extensions.khr_wayland_surface.name,
-            };
+        const instance_extensions = [_][*:0]const u8{
+            vk.extensions.khr_surface.name,
+            vk.extensions.khr_wayland_surface.name,
+            // vk.extensions.khr_xlib_surface.name,
+            // vk.extensions.ext_debug_utils.name,
+        };
         const enabled_layers = if (builtin.mode == .Debug)
             [1][*:0]const u8{
                 "VK_LAYER_KHRONOS_validation",
@@ -547,23 +638,29 @@ pub const VulkanContext = struct {
         const instance = Instance.init(instance_handle, instance_dispatch);
         errdefer instance.destroyInstance(null);
 
-        const debug_util_messenger_create_info = vk.DebugUtilsMessengerCreateInfoEXT{
-            .message_severity = .{ .verbose_bit_ext = true, .warning_bit_ext = true, .error_bit_ext = true, .info_bit_ext = true },
-            .message_type = .{ .general_bit_ext = true, .validation_bit_ext = true, .performance_bit_ext = true },
-            .pfn_user_callback = debugCallback,
-            .p_user_data = null,
-        };
-        const debug_messenger = try instance.createDebugUtilsMessengerEXT(&debug_util_messenger_create_info, null);
-        defer instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
+        // const debug_util_messenger_create_info = vk.DebugUtilsMessengerCreateInfoEXT{
+        //     .message_severity = .{ .verbose_bit_ext = true, .warning_bit_ext = true, .error_bit_ext = true, .info_bit_ext = true },
+        //     .message_type = .{ .general_bit_ext = true, .validation_bit_ext = true, .performance_bit_ext = true },
+        //     .pfn_user_callback = debugCallback,
+        //     .p_user_data = null,
+        // };
+        // const debug_messenger = try instance.createDebugUtilsMessengerEXT(&debug_util_messenger_create_info, null);
+        // defer instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
 
         const create_wayland_surface_info = vk.WaylandSurfaceCreateInfoKHR{
             .display = wl_display,
             .surface = wl_surface,
         };
         const surface = try instance.createWaylandSurfaceKHR(&create_wayland_surface_info, null);
+        // const create_x11_surface_info = vk.XlibSurfaceCreateInfoKHR{
+        //     .flags = .{},
+        //     .dpy = x11_display,
+        //     .window = x11_window,
+        // };
+        // const surface = try instance.createXlibSurfaceKHR(&create_x11_surface_info, null);
         errdefer instance.destroySurfaceKHR(surface, null);
 
-        const required_device_extensions = [1][]const u8{
+        const required_device_extensions = [_][*:0]const u8{
             vk.extensions.khr_swapchain.name,
         };
         const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
@@ -581,7 +678,7 @@ pub const VulkanContext = struct {
                 continue;
             }
             if (vk.apiVersionMinor(api_version) < 3) {
-                std.debug.print("  Minor version {d} is too low, expected at least 4\n", .{minor_version});
+                std.debug.print("  Minor version {d} is too low, expected at least 2\n", .{minor_version});
                 continue;
             }
             // get the device extension properties
@@ -593,7 +690,7 @@ pub const VulkanContext = struct {
                 for (props) |prop| {
                     // note: the extension_name is a 256-long array, so we need to
                     // take a slice for the comparison
-                    if (std.mem.eql(u8, need, prop.extension_name[0..need.len])) {
+                    if (std.mem.eql(u8, std.mem.span(need), std.mem.sliceTo(&prop.extension_name, 0))) {
                         found = true;
                         break;
                     }
@@ -632,6 +729,7 @@ pub const VulkanContext = struct {
                 break;
             }
         }
+        std.debug.print("done looping\n", .{});
 
         if (graphics_queue_index == null) {
             std.debug.print("Unable to find queue that supports graphics\n", .{});
@@ -641,6 +739,7 @@ pub const VulkanContext = struct {
             std.debug.print("Unable to find queue that supports presentation\n", .{});
             return error.NoPresentationQueue;
         }
+        std.debug.print("got indices\n", .{});
 
         const priority = [_]f32{1};
         var queue_create_infos = std.ArrayListUnmanaged(vk.DeviceQueueCreateInfo){};
@@ -662,7 +761,7 @@ pub const VulkanContext = struct {
             .queue_create_info_count = @intCast(queue_create_infos.items.len),
             .p_queue_create_infos = queue_create_infos.items.ptr,
             .enabled_extension_count = required_device_extensions.len,
-            .pp_enabled_extension_names = @ptrCast(&required_device_extensions),
+            .pp_enabled_extension_names = &required_device_extensions,
         };
         const device_handle = try instance.createDevice(physical_device, &device_create_info, null);
         const device_dispatch = try allocator.create(DeviceDispatch);
@@ -696,9 +795,9 @@ pub const VulkanContext = struct {
         allocator.destroy(self.instance.wrapper);
     }
 
-    pub fn createRenderPass(self: *const VulkanContext, format: vk.Format) !vk.RenderPass {
+    pub fn createRenderPass(self: *const VulkanContext, surface_format: vk.Format, depth_format: vk.Format) !vk.RenderPass {
         const color_attachment = vk.AttachmentDescription{
-            .format = format,
+            .format = surface_format,
             .samples = .{ .@"1_bit" = true },
             .load_op = .clear,
             .store_op = .store,
@@ -707,24 +806,52 @@ pub const VulkanContext = struct {
             .initial_layout = .undefined,
             .final_layout = .present_src_khr,
         };
-
         const color_attachment_ref = vk.AttachmentReference{
             .attachment = 0,
             .layout = .color_attachment_optimal,
+        };
+
+        const depth_attachment = vk.AttachmentDescription{
+            .format = depth_format,
+            .samples = .{ .@"1_bit" = true },
+            .load_op = .clear,
+            .store_op = .dont_care,
+            .stencil_load_op = .dont_care,
+            .stencil_store_op = .dont_care,
+            .initial_layout = .undefined,
+            .final_layout = .depth_stencil_attachment_optimal,
+        };
+        const depth_attachment_ref = vk.AttachmentReference{
+            .attachment = 1,
+            .layout = .depth_stencil_attachment_optimal,
         };
 
         const subpass = vk.SubpassDescription{
             .pipeline_bind_point = .graphics,
             .color_attachment_count = 1,
             .p_color_attachments = @ptrCast(&color_attachment_ref),
+            .p_depth_stencil_attachment = @ptrCast(&depth_attachment_ref),
         };
 
-        return try self.device.createRenderPass(&.{
-            .attachment_count = 1,
-            .p_attachments = @ptrCast(&color_attachment),
+        const subpass_dependency = vk.SubpassDependency{
+            .src_subpass = vk.SUBPASS_EXTERNAL,
+            .dst_subpass = 0,
+            .src_stage_mask = .{ .color_attachment_output_bit = true, .early_fragment_tests_bit = true },
+            .src_access_mask = .{},
+            .dst_stage_mask = .{ .color_attachment_output_bit = true, .early_fragment_tests_bit = true },
+            .dst_access_mask = .{ .color_attachment_write_bit = true, .depth_stencil_attachment_write_bit = true },
+        };
+
+        const attachments = [_]vk.AttachmentDescription{ color_attachment, depth_attachment };
+        const render_pass_create_info = vk.RenderPassCreateInfo{
+            .attachment_count = attachments.len,
+            .p_attachments = &attachments,
             .subpass_count = 1,
             .p_subpasses = @ptrCast(&subpass),
-        }, null);
+            .dependency_count = 1,
+            .p_dependencies = @ptrCast(&subpass_dependency),
+        };
+        return try self.device.createRenderPass(&render_pass_create_info, null);
     }
 
     // These "fname"s are embedded files - this is set up in build.zig
@@ -762,11 +889,16 @@ pub const VulkanContext = struct {
             .p_name = "main",
         } };
 
+        const binding_descriptions = [_]vk.VertexInputBindingDescription{
+            Vertex.binding_description,
+            Line.binding_description,
+        };
+        const attribute_descriptions = Vertex.attribute_description ++ Line.attribute_description;
         const pipeline_vertex_input_state_create_info = vk.PipelineVertexInputStateCreateInfo{
-            .vertex_binding_description_count = 1,
-            .p_vertex_binding_descriptions = @ptrCast(&Vertex.binding_description),
-            .vertex_attribute_description_count = Vertex.attribute_description.len,
-            .p_vertex_attribute_descriptions = &Vertex.attribute_description,
+            .vertex_binding_description_count = binding_descriptions.len,
+            .p_vertex_binding_descriptions = @ptrCast(&binding_descriptions),
+            .vertex_attribute_description_count = attribute_descriptions.len,
+            .p_vertex_attribute_descriptions = &attribute_descriptions,
         };
 
         const pipeline_input_assembly_state_create_info = vk.PipelineInputAssemblyStateCreateInfo{
@@ -800,6 +932,27 @@ pub const VulkanContext = struct {
             .min_sample_shading = 1,
             .alpha_to_coverage_enable = vk.FALSE,
             .alpha_to_one_enable = vk.FALSE,
+        };
+
+        const null_stencil_op_state = vk.StencilOpState{
+            .fail_op = .keep,
+            .pass_op = .keep,
+            .depth_fail_op = .keep,
+            .compare_op = .less,
+            .compare_mask = 0,
+            .write_mask = 0,
+            .reference = 0,
+        };
+        const pipeline_depth_stencil_state_create_info = vk.PipelineDepthStencilStateCreateInfo{
+            .depth_test_enable = vk.FALSE,
+            .depth_write_enable = vk.FALSE,
+            .depth_compare_op = .less,
+            .depth_bounds_test_enable = vk.FALSE,
+            .min_depth_bounds = 0,
+            .max_depth_bounds = 0,
+            .stencil_test_enable = vk.FALSE,
+            .front = null_stencil_op_state,
+            .back = null_stencil_op_state,
         };
 
         const pipeline_color_blend_attachment_state = vk.PipelineColorBlendAttachmentState{
@@ -838,9 +991,9 @@ pub const VulkanContext = struct {
             .p_viewport_state = &pipeline_viewport_state_create_info,
             .p_rasterization_state = &pipeline_rasterization_state_create_info,
             .p_multisample_state = &pipeline_multisample_state_create_info,
-            .p_depth_stencil_state = null,
-            .p_color_blend_state = &pipeline_color_blend_state_create_info,
             .p_dynamic_state = &pipeline_dynamic_state_create_info,
+            .p_color_blend_state = &pipeline_color_blend_state_create_info,
+            .p_depth_stencil_state = &pipeline_depth_stencil_state_create_info,
             .layout = layout,
             .render_pass = render_pass,
             .subpass = 0,
@@ -868,10 +1021,14 @@ pub const VulkanContext = struct {
         errdefer for (framebuffers[0..n_framebuffers]) |fb| self.device.destroyFramebuffer(fb, null);
 
         for (framebuffers) |*fb| {
+            const attachments = [_]vk.ImageView{
+                swapchain.swap_images[n_framebuffers].view,
+                swapchain.depth_image_view,
+            };
             const framebuffer_create_info = vk.FramebufferCreateInfo{
                 .render_pass = render_pass,
-                .attachment_count = 1,
-                .p_attachments = @ptrCast(&swapchain.swap_images[n_framebuffers].view),
+                .attachment_count = attachments.len,
+                .p_attachments = &attachments,
                 .width = swapchain.extent.width,
                 .height = swapchain.extent.height,
                 .layers = 1,
@@ -881,6 +1038,19 @@ pub const VulkanContext = struct {
         }
 
         return framebuffers;
+    }
+
+    pub fn findMemoryType(self: *const VulkanContext, memory_type_bits: u32, memory_property_flags: vk.MemoryPropertyFlags) !u32 {
+        const physical_device_memory_properties = self.instance.getPhysicalDeviceMemoryProperties(self.physical_device);
+        const memory_types = physical_device_memory_properties.memory_types;
+        const n_memory_types = physical_device_memory_properties.memory_type_count;
+        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
+            if (memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
+                return @truncate(i);
+            }
+        }
+
+        return error.NoSuitableMemoryType;
     }
 
     fn createBuffer(
@@ -898,22 +1068,10 @@ pub const VulkanContext = struct {
         const buffer = try self.device.createBuffer(&buffer_create_info, null);
 
         const memory_requirements = self.device.getBufferMemoryRequirements(buffer);
-        const physical_device_memory_properties = self.instance.getPhysicalDeviceMemoryProperties(self.physical_device);
-        var memory_type_index: ?u32 = null;
-        const memory_types = physical_device_memory_properties.memory_types;
-        const n_memory_types = physical_device_memory_properties.memory_type_count;
-        const memory_property_flags = vk.MemoryPropertyFlags{ .device_local_bit = true };
-        for (memory_types[0..n_memory_types], 0..) |memory_type, i| {
-            if (memory_requirements.memory_type_bits & (@as(u32, 1) << @truncate(i)) != 0 and memory_type.property_flags.contains(memory_property_flags)) {
-                memory_type_index = @truncate(i);
-            }
-        }
-        if (memory_type_index == null) {
-            return error.NoSuitableMemoryType;
-        }
+        const memory_type_index = try self.findMemoryType(memory_requirements.memory_type_bits, .{ .device_local_bit = true });
         const memory_allocate_info = vk.MemoryAllocateInfo{
             .allocation_size = memory_requirements.size,
-            .memory_type_index = memory_type_index.?,
+            .memory_type_index = memory_type_index,
         };
         const memory = try self.device.allocateMemory(&memory_allocate_info, null);
 
@@ -933,6 +1091,10 @@ const Swapchain = struct {
     handle: vk.SwapchainKHR,
 
     swap_images: []SwapImage,
+    depth_format: vk.Format,
+    depth_image: vk.Image,
+    depth_image_memory: vk.DeviceMemory,
+    depth_image_view: vk.ImageView,
     current_image_index: u32,
     next_image_acquired: vk.Semaphore,
 
@@ -982,6 +1144,58 @@ const Swapchain = struct {
             image_count = capabilities.max_image_count;
         }
         const queue_family_indices = [_]u32{ vk_ctx.graphics_queue_index, vk_ctx.presentation_queue_index };
+
+        // depth buffer
+        // const depth_format = vk.Format.d32_sfloat;
+        const depth_format = vk.Format.d32_sfloat_s8_uint;
+        const depth_image_create_info = vk.ImageCreateInfo{
+            .image_type = .@"2d",
+            .format = depth_format,
+            .extent = .{
+                .width = extent.width,
+                .height = extent.height,
+                .depth = 1,
+            },
+            .mip_levels = 1,
+            .array_layers = 1,
+            .samples = .{ .@"1_bit" = true },
+            .tiling = .optimal,
+            .usage = .{
+                .depth_stencil_attachment_bit = true,
+            },
+            .sharing_mode = .exclusive,
+            .initial_layout = .undefined,
+        };
+        const depth_image = try vk_ctx.device.createImage(&depth_image_create_info, null);
+
+        const image_memory_requirements = vk_ctx.device.getImageMemoryRequirements(depth_image);
+        const memory_type_index = try vk_ctx.findMemoryType(image_memory_requirements.memory_type_bits, .{ .device_local_bit = true });
+        const depth_image_memory_allocate_info = vk.MemoryAllocateInfo{
+            .allocation_size = image_memory_requirements.size,
+            .memory_type_index = memory_type_index,
+        };
+        const depth_image_memory = try vk_ctx.device.allocateMemory(&depth_image_memory_allocate_info, null);
+        try vk_ctx.device.bindImageMemory(depth_image, depth_image_memory, 0);
+
+        const depth_image_view_create_info = vk.ImageViewCreateInfo{
+            .image = depth_image,
+            .view_type = .@"2d",
+            .format = depth_format,
+            .components = .{
+                .r = .identity,
+                .g = .identity,
+                .b = .identity,
+                .a = .identity,
+            },
+            .subresource_range = .{
+                .aspect_mask = .{ .depth_bit = true },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+        const depth_image_view = try vk_ctx.device.createImageView(&depth_image_view_create_info, null);
 
         const swapchain_create_info = vk.SwapchainCreateInfoKHR{
             .surface = vk_ctx.surface,
@@ -1039,6 +1253,10 @@ const Swapchain = struct {
             .swap_images = swap_images,
             .current_image_index = result.image_index,
             .next_image_acquired = next_image_acquired,
+            .depth_format = depth_format,
+            .depth_image = depth_image,
+            .depth_image_memory = depth_image_memory,
+            .depth_image_view = depth_image_view,
         };
     }
 
@@ -1052,6 +1270,9 @@ const Swapchain = struct {
             si.deinit(&vk_ctx.device);
         }
         allocator.free(self.swap_images);
+        vk_ctx.device.destroyImageView(self.depth_image_view, null);
+        vk_ctx.device.destroyImage(self.depth_image, null);
+        vk_ctx.device.freeMemory(self.depth_image_memory, null);
         vk_ctx.device.destroySemaphore(self.next_image_acquired, null);
     }
 
@@ -1193,6 +1414,11 @@ pub const MVPUniformBufferObject = struct {
     projection: zm.Mat,
 };
 
+pub const LineUniformBufferObject = struct {
+    aspect_ratio: f32,
+    line_thickness: f32,
+};
+
 pub const Vertex = struct {
     const binding_description = vk.VertexInputBindingDescription{
         .binding = 0,
@@ -1221,6 +1447,54 @@ pub const Vertex = struct {
     pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });
     }
+};
+
+pub const Line = struct {
+    const binding_description = vk.VertexInputBindingDescription{
+        .binding = 1,
+        .stride = @sizeOf(Line),
+        .input_rate = .vertex,
+    };
+
+    const attribute_description = [_]vk.VertexInputAttributeDescription{
+        .{
+            .binding = 1,
+            .location = 2,
+            .format = .r32g32_sfloat,
+            .offset = @offsetOf(Line, "posA"),
+        },
+        .{
+            .binding = 1,
+            .location = 3,
+            .format = .r32g32_sfloat,
+            .offset = @offsetOf(Line, "posB"),
+        },
+        .{
+            .binding = 1,
+            .location = 4,
+            .format = .r32g32b32_sfloat,
+            .offset = @offsetOf(Line, "colorA"),
+        },
+        .{
+            .binding = 1,
+            .location = 5,
+            .format = .r32g32b32_sfloat,
+            .offset = @offsetOf(Line, "colorB"),
+        },
+        .{
+            .binding = 1,
+            .location = 6,
+            .format = .r8g8_unorm,
+            .offset = @offsetOf(Line, "up"),
+        },
+    };
+
+    posA: [3]f32,
+    posB: [3]f32,
+    colorA: [3]f32,
+    colorB: [3]f32,
+    up: bool,
+    left: bool,
 };
 
 fn debugCallback(
