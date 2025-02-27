@@ -948,8 +948,8 @@ pub const VulkanContext = struct {
             .reference = 0,
         };
         const pipeline_depth_stencil_state_create_info = vk.PipelineDepthStencilStateCreateInfo{
-            .depth_test_enable = vk.FALSE,
-            .depth_write_enable = vk.FALSE,
+            .depth_test_enable = vk.TRUE,
+            .depth_write_enable = vk.TRUE,
             .depth_compare_op = .less,
             .depth_bounds_test_enable = vk.FALSE,
             .min_depth_bounds = 0,
@@ -1434,7 +1434,7 @@ pub const Vertex = struct {
         .{
             .binding = 0,
             .location = 0,
-            .format = .r32g32_sfloat,
+            .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Vertex, "pos"),
         },
         .{

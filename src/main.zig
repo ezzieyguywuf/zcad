@@ -100,7 +100,7 @@ pub fn main() !void {
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.0001, 10000.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 100.0),
         },
         .should_exit = false,
     };
@@ -155,33 +155,34 @@ pub fn main() !void {
     defer renderer.deinit(allocator, &vk_ctx);
 
     // zcad
+    const triangle_color = [_]f32{ 0.8, 0.2, 0.8 };
     const vk_triangle_vertices = [_]vkr.Vertex{
         .{
             .pos = .{ -5, -5, 0 },
-            .color = .{ 1, 1, 0 },
+            .color = triangle_color,
         },
         .{
             .pos = .{ 5, -5, 0 },
-            .color = .{ 1, 1, 0 },
+            .color = triangle_color,
         },
         .{
             .pos = .{ 5, 5, 0 },
-            .color = .{ 1, 1, 0 },
+            .color = triangle_color,
         },
         .{
             .pos = .{ -5, 5, 0 },
-            .color = .{ 1, 1, 0 },
+            .color = triangle_color,
         },
         .{
-            .pos = .{ -5, -5, -5 },
-            .color = .{ 0, 0, 1 },
+            .pos = .{ 5, 5, -5 },
+            .color = triangle_color,
         },
         .{
             .pos = .{ 5, -5, -5 },
-            .color = .{ 0, 0, 1 },
+            .color = triangle_color,
         },
     };
-    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 4, 1, 2, 4, 2, 5 };
+    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 1, 2, 5, 2, 4, 5 };
 
     const vk_point_vertices = [_]vkr.Vertex{
         .{
@@ -193,12 +194,12 @@ pub fn main() !void {
             .color = .{ 0, 0.5, 0.5 },
         },
         .{
-            .pos = .{ 5, -5, 5 },
-            .color = .{ 1, 0.5, 0.5 },
+            .pos = .{ 5, 5, -5 },
+            .color = .{ 1, 0, 0 },
         },
         .{
             .pos = .{ 5, -5, -5 },
-            .color = .{ 1, 1.0, 0.5 },
+            .color = .{ 1, 1, 0 },
         },
     };
     const point_indices = [_]u32{ 0, 1, 2 };
@@ -213,8 +214,13 @@ pub fn main() !void {
         .{ 5, 5, 0 },
         .{ 0, 0, 0 },
         .{ 0, 0, 0 },
+    ) ++ makeLine(
+        .{ 5, -5, 0 },
+        .{ 5, -5, -5 },
+        .{ 0, 0, 0 },
+        .{ 0, 0, 0 },
     );
-    const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 };
+    const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 } ++ .{ 8, 9, 10, 8, 11, 9 };
 
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, &vk_line_vertices, &line_indices);
@@ -222,12 +228,12 @@ pub fn main() !void {
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
-        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
+        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 100.0);
     }
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
-            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.0001, 10000.0);
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 100.0);
             wnd_ctx.resizing_done = true;
         }
 
