@@ -4,49 +4,48 @@ const c = @cImport({
     @cInclude("stdlib.h");
     @cInclude("string.h");
 });
+const wnd = @import("WindowingContext.zig");
 
-pub const X11Context = struct {
-    display: *c.Display,
-    window: c.Window,
+pub fn X11Context(comptime T: type) type {
+    return struct {
+        wnd_ctx: *wnd.WindowingContext(T),
+        display: *c.Display,
+        window: c.Window,
 
-    pub fn init(width: c_uint, height: c_uint) !X11Context {
-        const display = c.XOpenDisplay("");
-        if (display == null) {
-            return error.CannotOpenX11Display;
+        pub fn init(self: *X11Context(T), wnd_ctx: *wnd.WindowingContext(T)) !void {
+            self.wnd_ctx = wnd_ctx;
+            self.display = c.XOpenDisplay("") orelse return error.CannotOpenX11Display;
+
+            const screen_id = c.DefaultScreen(self.display);
+            self.window = c.XCreateSimpleWindow(
+                self.display,
+                c.RootWindow(self.display, screen_id),
+                10,
+                10,
+                @intCast(wnd_ctx.width),
+                @intCast(wnd_ctx.height),
+                1,
+                c.BlackPixel(self.display, screen_id),
+                c.WhitePixel(self.display, screen_id),
+            );
+            _ = c.XSelectInput(self.display, self.window, c.ExposureMask | c.KeyPressMask);
+            _ = c.XMapWindow(self.display, self.window);
+
+            return;
         }
 
-        const screen_id = c.DefaultScreen(display);
-        const window = c.XCreateSimpleWindow(
-            display,
-            c.RootWindow(display, screen_id),
-            10,
-            10,
-            width,
-            height,
-            1,
-            c.BlackPixel(display, screen_id),
-            c.WhitePixel(display, screen_id),
-        );
-        _ = c.XSelectInput(display, window, c.ExposureMask | c.KeyPressMask);
-        _ = c.XMapWindow(display, window);
+        pub fn deinit(self: *const X11Context) void {
+            _ = c.XCloseDisplay(self.display);
+        }
 
-        return X11Context{
-            .display = display.?,
-            .window = window,
-        };
-    }
+        pub fn run(self: *const X11Context) bool {
+            var event: c.XEvent = undefined;
+            _ = c.XNextEvent(self.display, &event);
+            if (event.type == c.KeyPress) {
+                return false;
+            }
 
-    pub fn deinit(self: *const X11Context) void {
-        _ = c.XCloseDisplay(self.display);
-    }
-
-    pub fn tick(self: *const X11Context) bool {
-        var event: c.XEvent = undefined;
-        _ = c.XNextEvent(self.display, &event);
-        if (event.type == c.KeyPress) {
             return false;
         }
-
-        return false;
-    }
-};
+    };
+}

@@ -15,6 +15,11 @@ const AppContext = struct {
     should_exit: bool,
 };
 
+const OsWindow = union(wnd.WindowingType) {
+    xlib: *x11.X11Context(*AppContext),
+    wayland: *wl.WaylandContext(*AppContext),
+};
+
 pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     if (input_state.should_close) {
         app_ctx.should_exit = true;
@@ -66,48 +71,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     app_ctx.prev_input_state.horizontal_scroll = 0;
 }
 
-fn makeLine(
-    left_pos: [3]f32,
-    right_pos: [3]f32,
-    left_color: [3]f32,
-    right_color: [3]f32,
-) [4]vkr.Line {
-    return .{
-        .{
-            .posA = left_pos,
-            .posB = right_pos,
-            .colorA = left_color,
-            .colorB = right_color,
-            .left = true,
-            .up = false,
-        },
-        .{
-            .posA = left_pos,
-            .posB = right_pos,
-            .colorA = left_color,
-            .colorB = right_color,
-            .left = false,
-            .up = true,
-        },
-        .{
-            .posA = left_pos,
-            .posB = right_pos,
-            .colorA = left_color,
-            .colorB = right_color,
-            .left = true,
-            .up = true,
-        },
-        .{
-            .posA = left_pos,
-            .posB = right_pos,
-            .colorA = left_color,
-            .colorB = right_color,
-            .left = false,
-            .up = false,
-        },
-    };
-}
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -143,39 +106,50 @@ pub fn main() !void {
     };
 
     var args = try std.process.argsWithAllocator(allocator);
+    var use_x11 = false;
     defer args.deinit();
     // skip first arg, which is program name
     _ = args.next();
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--use-x11")) {
-            std.debug.print("got arg: {s}\n", .{arg});
+            use_x11 = true;
         } else {
             std.debug.print("unrecognized arg: {s}\n", .{arg});
             return error.UnrecognizedArgument;
         }
     }
+
     // Windowing
     var wnd_ctx = wnd.WindowingContext(*AppContext).init(&app_ctx, InputCallback, 680, 420);
+    var os_window = if (use_x11) OsWindow{ .xlib = try allocator.create(x11.X11Context(*AppContext)) } else OsWindow{ .wayland = try allocator.create(wl.WaylandContext(*AppContext)) };
+    defer {
+        switch (os_window) {
+            .xlib => |window| allocator.destroy(window),
+            .wayland => |window| allocator.destroy(window),
+        }
+    }
 
-    // X11
-    // const x11_ctx = try x11.X11Context.init(680, 420);
-    // defer x11_ctx.deinit();
-
-    // Wayland
-    var wl_ctx = try allocator.create(wl.WaylandContext(*AppContext));
-    defer allocator.destroy(wl_ctx);
-    try wl_ctx.init(&wnd_ctx);
+    switch (os_window) {
+        .xlib => |*window| try window.*.init(&wnd_ctx),
+        .wayland => |*window| try window.*.init(&wnd_ctx),
+    }
 
     // vulkan
-    const vk_ctx = try vkr.VulkanContext.init(
-        allocator,
-        vkr.WindowingInfo{
-            .wayland = .{
-                .wl_display = @ptrCast(wl_ctx.wl_display),
-                .wl_surface = @ptrCast(wl_ctx.wl_surface),
+    const vk_ctx = switch (os_window) {
+        .xlib => |window| try vkr.VulkanContext.init(allocator, vkr.WindowingInfo{ .xlib = .{
+            .x11_display = @ptrCast(window.display),
+            .x11_window = window.window,
+        } }),
+        .wayland => |window| try vkr.VulkanContext.init(
+            allocator,
+            vkr.WindowingInfo{
+                .wayland = .{
+                    .wl_display = @ptrCast(window.wl_display),
+                    .wl_surface = @ptrCast(window.wl_surface),
+                },
             },
-        },
-    );
+        ),
+    };
     defer vk_ctx.deinit(allocator);
     var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wnd_ctx.width), @intCast(wnd_ctx.height));
     defer renderer.deinit(allocator, &vk_ctx);
@@ -257,7 +231,10 @@ pub fn main() !void {
             wnd_ctx.resizing_done = true;
         }
 
-        const should_render = try wl_ctx.run();
+        const should_render = switch (os_window) {
+            .xlib => true,
+            .wayland => |window| try window.run(),
+        };
         if (!should_render) continue;
 
         app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
@@ -273,7 +250,50 @@ pub fn main() !void {
     std.debug.print("exited loop\n", .{});
     try renderer.swapchain.waitForAllFences(&vk_ctx.device);
     try vk_ctx.device.deviceWaitIdle();
+
     std.debug.print("exiting main\n", .{});
+}
+
+fn makeLine(
+    left_pos: [3]f32,
+    right_pos: [3]f32,
+    left_color: [3]f32,
+    right_color: [3]f32,
+) [4]vkr.Line {
+    return .{
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = true,
+            .up = false,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = false,
+            .up = true,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = true,
+            .up = true,
+        },
+        .{
+            .posA = left_pos,
+            .posB = right_pos,
+            .colorA = left_color,
+            .colorB = right_color,
+            .left = false,
+            .up = false,
+        },
+    };
 }
 
 // This is unitless, by design. For higher precision maths, simply scale these

@@ -5,6 +5,7 @@ const zm = @import("zmath");
 const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
+const wnd = @import("WindowingContext.zig");
 
 pub const InstancedDataType = enum { Points, Lines, Triangles };
 
@@ -555,15 +556,7 @@ pub const Renderer = struct {
     }
 };
 
-pub const WindowingType = enum {
-    xlib,
-    wayland,
-};
-pub const WaylandWindowing = struct {
-    wl_display: *vk.wl_display,
-    wl_surface: *vk.wl_surface,
-};
-pub const WindowingInfo = union(WindowingType) {
+pub const WindowingInfo = union(wnd.WindowingType) {
     xlib: struct {
         x11_display: *vk.Display,
         x11_window: vk.Window,
