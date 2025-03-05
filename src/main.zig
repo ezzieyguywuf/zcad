@@ -155,76 +155,76 @@ pub fn main() !void {
     defer renderer.deinit(allocator, &vk_ctx);
 
     // zcad
-    const triangle_color = [_]f32{ 0.8, 0.2, 0.8 };
-    const vk_triangle_vertices = [_]vkr.Vertex{
-        .{
-            .pos = .{ -5, -5, 0 },
-            .color = triangle_color,
-        },
-        .{
-            .pos = .{ 5, -5, 0 },
-            .color = triangle_color,
-        },
-        .{
-            .pos = .{ 5, 5, 0 },
-            .color = triangle_color,
-        },
-        .{
-            .pos = .{ -5, 5, 0 },
-            .color = triangle_color,
-        },
-        .{
-            .pos = .{ 5, 5, -5 },
-            .color = triangle_color,
-        },
-        .{
-            .pos = .{ 5, -5, -5 },
-            .color = triangle_color,
-        },
-    };
-    const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 1, 2, 5, 2, 4, 5 };
+    // const triangle_color = [_]f32{ 0.8, 0.2, 0.8 };
+    // const vk_triangle_vertices = [_]vkr.Vertex{
+    //     .{
+    //         .pos = .{ -5, -5, 0 },
+    //         .color = triangle_color,
+    //     },
+    //     .{
+    //         .pos = .{ 5, -5, 0 },
+    //         .color = triangle_color,
+    //     },
+    //     .{
+    //         .pos = .{ 5, 5, 0 },
+    //         .color = triangle_color,
+    //     },
+    //     .{
+    //         .pos = .{ -5, 5, 0 },
+    //         .color = triangle_color,
+    //     },
+    //     .{
+    //         .pos = .{ 5, 5, -10 },
+    //         .color = triangle_color,
+    //     },
+    //     .{
+    //         .pos = .{ 5, -5, -10 },
+    //         .color = triangle_color,
+    //     },
+    // };
+    // const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 1, 2, 5, 2, 4, 5 };
 
-    const vk_point_vertices = [_]vkr.Vertex{
-        .{
-            .pos = .{ -5, -5, 0 },
-            .color = .{ 0, 0.5, 0.5 },
-        },
-        .{
-            .pos = .{ 5, -5, 0 },
-            .color = .{ 0, 0.5, 0.5 },
-        },
-        .{
-            .pos = .{ 5, 5, -5 },
-            .color = .{ 1, 0, 0 },
-        },
-        .{
-            .pos = .{ 5, -5, -5 },
-            .color = .{ 1, 1, 0 },
-        },
-    };
-    const point_indices = [_]u32{ 0, 1, 2 };
+    // const vk_point_vertices = [_]vkr.Vertex{
+    //     .{
+    //         .pos = .{ -5, -5, 0 },
+    //         .color = .{ 0, 0.5, 0.5 },
+    //     },
+    //     .{
+    //         .pos = .{ 5, -5, 0 },
+    //         .color = .{ 0, 0.5, 0.5 },
+    //     },
+    //     .{
+    //         .pos = .{ 5, 5, -10 },
+    //         .color = .{ 1, 0, 0 },
+    //     },
+    //     .{
+    //         .pos = .{ 5, -5, -10 },
+    //         .color = .{ 1, 1, 0 },
+    //     },
+    // };
+    // const point_indices = [_]u32{ 0, 1, 2 };
 
-    const vk_line_vertices = makeLine(
-        .{ -5, -5, 0 },
-        .{ 5, -5, 0 },
-        .{ 0, 0, 0 },
-        .{ 0, 0, 0 },
-    ) ++ makeLine(
-        .{ 5, -5, 0 },
-        .{ 5, 5, 0 },
-        .{ 0, 0, 0 },
-        .{ 0, 0, 0 },
-    ) ++ makeLine(
-        .{ 5, -5, 0 },
-        .{ 5, -5, -5 },
-        .{ 0, 0, 0 },
-        .{ 0, 0, 0 },
-    );
-    const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 } ++ .{ 8, 9, 10, 8, 11, 9 };
+    // const vk_line_vertices = makeLine(
+    //     .{ -5, -5, 0 },
+    //     .{ 5, -5, 0 },
+    //     .{ 0, 0, 0 },
+    //     .{ 0, 0, 0 },
+    // ) ++ makeLine(
+    //     .{ 5, -5, 0 },
+    //     .{ 5, 5, 0 },
+    //     .{ 0, 0, 0 },
+    //     .{ 0, 0, 0 },
+    // ) ++ makeLine(
+    //     .{ 5, -5, 0 },
+    //     .{ 5, -5, -10 },
+    //     .{ 0, 0, 0 },
+    //     .{ 0, 0, 0 },
+    // );
+    // const line_indices = [6]u32{ 0, 1, 2, 0, 3, 1 } ++ .{ 4, 5, 6, 4, 7, 5 } ++ .{ 8, 9, 10, 8, 11, 9 };
 
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
-    try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, &vk_line_vertices, &line_indices);
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
+    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
+    // try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, &vk_line_vertices, &line_indices);
+    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));

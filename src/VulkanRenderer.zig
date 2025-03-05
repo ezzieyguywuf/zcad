@@ -178,6 +178,8 @@ pub const Renderer = struct {
         // leave some member variables `undefined` above and init them in these
         // helpers
         try renderer.createUniformBuffers(allocator, vk_ctx, framebuffers.len);
+        try renderer.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(width), .height = @intCast(height) });
+
         return renderer;
     }
 
