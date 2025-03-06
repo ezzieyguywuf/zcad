@@ -1466,13 +1466,13 @@ pub const Line = struct {
         .{
             .binding = 1,
             .location = 2,
-            .format = .r32g32_sfloat,
+            .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posA"),
         },
         .{
             .binding = 1,
             .location = 3,
-            .format = .r32g32_sfloat,
+            .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posB"),
         },
         .{

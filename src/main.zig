@@ -207,8 +207,54 @@ pub fn main() !void {
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
     try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 0, .y = 0, .z = 0 },
-        .p1 = .{ .x = 10, .y = 10, .z = 10 },
+        .p0 = .{ .x = -5, .y = -5, .z = -5 },
+        .p1 = .{ .x = 5, .y = -5, .z = -5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = -5, .z = -5 },
+        .p1 = .{ .x = 5, .y = 5, .z = -5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = 5, .z = -5 },
+        .p1 = .{ .x = -5, .y = 5, .z = -5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = -5, .y = 5, .z = -5 },
+        .p1 = .{ .x = -5, .y = -5, .z = -5 },
+    });
+
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = -5, .y = -5, .z = 5 },
+        .p1 = .{ .x = 5, .y = -5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = -5, .z = 5 },
+        .p1 = .{ .x = 5, .y = 5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = 5, .z = 5 },
+        .p1 = .{ .x = -5, .y = 5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = -5, .y = 5, .z = 5 },
+        .p1 = .{ .x = -5, .y = -5, .z = 5 },
+    });
+
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = -5, .y = -5, .z = -5 },
+        .p1 = .{ .x = -5, .y = -5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = -5, .z = -5 },
+        .p1 = .{ .x = 5, .y = -5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = 5, .y = 5, .z = -5 },
+        .p1 = .{ .x = 5, .y = 5, .z = 5 },
+    });
+    try rendered_lines.addLine(allocator, .{
+        .p0 = .{ .x = -5, .y = 5, .z = -5 },
+        .p1 = .{ .x = -5, .y = 5, .z = 5 },
     });
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
