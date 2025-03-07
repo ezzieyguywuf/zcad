@@ -100,7 +100,7 @@ pub fn main() !void {
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 100.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 1000.0),
         },
         .should_exit = false,
     };
@@ -263,12 +263,12 @@ pub fn main() !void {
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
-        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 100.0);
+        app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
     }
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
-            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 100.0);
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
             wnd_ctx.resizing_done = true;
         }
 
