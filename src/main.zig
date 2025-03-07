@@ -335,6 +335,7 @@ pub const RenderedLines = struct {
             .posB = right,
             .left = true,
             .up = false,
+            .edge = false,
             .colorA = color,
             .colorB = color,
         });
@@ -343,6 +344,7 @@ pub const RenderedLines = struct {
             .posB = right,
             .left = false,
             .up = true,
+            .edge = false,
             .colorA = color,
             .colorB = color,
         });
@@ -351,6 +353,7 @@ pub const RenderedLines = struct {
             .posB = right,
             .left = true,
             .up = true,
+            .edge = false,
             .colorA = color,
             .colorB = color,
         });
@@ -359,6 +362,45 @@ pub const RenderedLines = struct {
             .posB = right,
             .left = false,
             .up = false,
+            .edge = false,
+            .colorA = color,
+            .colorB = color,
+        });
+
+        // These "edge" vertices will allow for anti-aliasing
+        try self.vulkan_vertices.append(allocator, .{
+            .posA = left,
+            .posB = right,
+            .left = true,
+            .up = false,
+            .edge = true,
+            .colorA = color,
+            .colorB = color,
+        });
+        try self.vulkan_vertices.append(allocator, .{
+            .posA = left,
+            .posB = right,
+            .left = false,
+            .up = true,
+            .edge = true,
+            .colorA = color,
+            .colorB = color,
+        });
+        try self.vulkan_vertices.append(allocator, .{
+            .posA = left,
+            .posB = right,
+            .left = true,
+            .up = true,
+            .edge = true,
+            .colorA = color,
+            .colorB = color,
+        });
+        try self.vulkan_vertices.append(allocator, .{
+            .posA = left,
+            .posB = right,
+            .left = false,
+            .up = false,
+            .edge = true,
             .colorA = color,
             .colorB = color,
         });
@@ -370,6 +412,21 @@ pub const RenderedLines = struct {
         try self.vulkan_indices.append(allocator, n);
         try self.vulkan_indices.append(allocator, n + 3);
         try self.vulkan_indices.append(allocator, n + 1);
+
+        // and finally the edge indices
+        try self.vulkan_indices.append(allocator, n + 2);
+        try self.vulkan_indices.append(allocator, n + 5);
+        try self.vulkan_indices.append(allocator, n + 6);
+        try self.vulkan_indices.append(allocator, n + 2);
+        try self.vulkan_indices.append(allocator, n + 1);
+        try self.vulkan_indices.append(allocator, n + 5);
+
+        try self.vulkan_indices.append(allocator, n + 4);
+        try self.vulkan_indices.append(allocator, n + 3);
+        try self.vulkan_indices.append(allocator, n);
+        try self.vulkan_indices.append(allocator, n + 4);
+        try self.vulkan_indices.append(allocator, n + 7);
+        try self.vulkan_indices.append(allocator, n + 3);
     }
 };
 

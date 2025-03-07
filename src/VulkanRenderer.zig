@@ -1490,8 +1490,20 @@ pub const Line = struct {
         .{
             .binding = 1,
             .location = 6,
-            .format = .r8g8_unorm,
+            .format = .r8_uint,
             .offset = @offsetOf(Line, "up"),
+        },
+        .{
+            .binding = 1,
+            .location = 7,
+            .format = .r8_uint,
+            .offset = @offsetOf(Line, "left"),
+        },
+        .{
+            .binding = 1,
+            .location = 8,
+            .format = .r8_uint,
+            .offset = @offsetOf(Line, "edge"),
         },
     };
 
@@ -1501,6 +1513,7 @@ pub const Line = struct {
     colorB: [3]f32,
     up: bool,
     left: bool,
+    edge: bool,
 };
 
 fn debugCallback(

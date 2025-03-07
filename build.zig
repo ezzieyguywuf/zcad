@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) !void {
     try addShader(allocator, b, exe, "circle_vertex_shader", "shaders/circle.vert");
     try addShader(allocator, b, exe, "circle_fragment_shader", "shaders/circle.frag");
     try addShader(allocator, b, exe, "line_vertex_shader", "shaders/line.vert");
-    try addShader(allocator, b, exe, "line_fragment_shader", "shaders/triangle.frag");
+    try addShader(allocator, b, exe, "line_fragment_shader", "shaders/line.frag");
 
     const test_filter = b.option([]const u8, "test-filter", "Filter for test");
     const exe_unit_tests = b.addTest(.{
