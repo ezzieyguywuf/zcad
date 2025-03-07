@@ -41,7 +41,7 @@ void main() {
     }
 
     if (edge) {
-      // v_color.a = 0;
+      v_color.a = 0;
       offset += antialias_offset;
     }
 
