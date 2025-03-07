@@ -21,8 +21,8 @@ layout(location = 8) in uint edge_int;
 layout(location = 0) out vec4 v_color;
 
 void main() {
-    bool left = up_int > 0;
-    bool up = left_int > 0;
+    bool left = left_int > 0;
+    bool up = up_int > 0;
     bool edge = edge_int > 0;
     // transform both ends of the line into "clip space"
     vec4 clipA = ubo.proj * ubo.view * ubo.model * vec4(a_posA, 1.0);
@@ -41,12 +41,8 @@ void main() {
     }
 
     if (edge) {
-      v_color = vec4(1 , 0 , 0, 1);
-      if (up) {
-        offset += antialias_offset;
-      } else {
-        offset -= antialias_offset;
-      }
+      // v_color.a = 0;
+      offset += antialias_offset;
     }
 
     // Dividing by "w" converts to normalized device coordinates. We also have

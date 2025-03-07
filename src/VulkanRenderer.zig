@@ -114,7 +114,7 @@ pub const Renderer = struct {
             "line_vertex_shader",
             "line_fragment_shader",
             .triangle_list,
-            false,
+            true,
             pipeline_layout,
             render_pass,
         );
