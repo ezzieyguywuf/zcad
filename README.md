@@ -11,7 +11,9 @@ Aliasing on left, AntiAliasing on the right
 
 <details>
   <summary> old demos </summary>
+  
 [Screen recording 2025-02-26 11.52.24 PM.webm](https://github.com/user-attachments/assets/2b1aa1c6-643b-42c8-b7cc-2698141c2e85)
+
 </details>
 
 # previous work
