@@ -249,13 +249,22 @@ pub const Renderer = struct {
         const color_clear = vk.ClearValue{
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
         };
+        const id_clear = vk.ClearValue{
+            .color = .{ .uint_32 = .{ std.math.maxInt(u32), std.math.maxInt(u32), 0, 0 } },
+        };
         const depth_clear = vk.ClearValue{
             .depth_stencil = .{
                 .depth = 1.0,
                 .stencil = 0,
             },
         };
-        const clear_values = [_]vk.ClearValue{ color_clear, depth_clear };
+        const clear_values = [_]vk.ClearValue{
+            color_clear,
+            id_clear,
+            id_clear,
+            id_clear,
+            depth_clear,
+        };
 
         const viewport = vk.Viewport{
             .x = 0,
@@ -669,6 +678,9 @@ pub const VulkanContext = struct {
         const required_device_extensions = [_][*:0]const u8{
             vk.extensions.khr_swapchain.name,
         };
+        const required_device_features = vk.PhysicalDeviceFeatures{
+            .independent_blend = vk.TRUE,
+        };
         const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
         defer allocator.free(physical_devices);
         var maybe_physical_device: ?vk.PhysicalDevice = null;
@@ -683,10 +695,11 @@ pub const VulkanContext = struct {
                 std.debug.print("  Major version {d} is too low, expected at least 1\n", .{major_version});
                 continue;
             }
-            if (vk.apiVersionMinor(api_version) < 3) {
-                std.debug.print("  Minor version {d} is too low, expected at least 2\n", .{minor_version});
+            if (vk.apiVersionMinor(api_version) < 4) {
+                std.debug.print("  Minor version {d} is too low, expected at least 3\n", .{minor_version});
                 continue;
             }
+
             // get the device extension properties
             const props = try instance.enumerateDeviceExtensionPropertiesAlloc(physical_device_candidate, null, allocator);
             defer allocator.free(props);
@@ -705,7 +718,26 @@ pub const VulkanContext = struct {
                     continue :outer;
                 }
             }
+
+            // get the device features
+            const device_features = instance.getPhysicalDeviceFeatures(physical_device_candidate);
+            inline for (@typeInfo(vk.PhysicalDeviceFeatures).@"struct".fields) |field| {
+                if (@field(required_device_features, field.name) == vk.TRUE and @field(device_features, field.name) == vk.FALSE) {
+                    continue :outer;
+                }
+            }
+
             std.debug.print("  MATCH on {s}\n", .{physical_device_properties.device_name});
+            std.debug.print("  Api Version: {d}.{d}.{d}\n", .{
+                vk.apiVersionMajor(physical_device_properties.api_version),
+                vk.apiVersionMinor(physical_device_properties.api_version),
+                vk.apiVersionPatch(physical_device_properties.api_version),
+            });
+            std.debug.print("  Driver Version: {d}.{d}.{d}\n", .{
+                vk.apiVersionMajor(physical_device_properties.driver_version),
+                vk.apiVersionMinor(physical_device_properties.driver_version),
+                vk.apiVersionPatch(physical_device_properties.driver_version),
+            });
             maybe_physical_device = physical_device_candidate;
             break;
         }
@@ -768,6 +800,7 @@ pub const VulkanContext = struct {
             .p_queue_create_infos = queue_create_infos.items.ptr,
             .enabled_extension_count = required_device_extensions.len,
             .pp_enabled_extension_names = &required_device_extensions,
+            .p_enabled_features = &required_device_features,
         };
         const device_handle = try instance.createDevice(physical_device, &device_create_info, null);
         const device_dispatch = try allocator.create(DeviceDispatch);
@@ -817,6 +850,29 @@ pub const VulkanContext = struct {
             .layout = .color_attachment_optimal,
         };
 
+        const id_color_attachment = vk.AttachmentDescription{
+            .format = .r32g32_uint,
+            .samples = .{ .@"1_bit" = true },
+            .load_op = .clear,
+            .store_op = .store,
+            .stencil_load_op = .dont_care,
+            .stencil_store_op = .dont_care,
+            .initial_layout = .undefined,
+            .final_layout = .color_attachment_optimal,
+        };
+        const vertex_id_color_attachment_ref = vk.AttachmentReference{
+            .attachment = 1,
+            .layout = .color_attachment_optimal,
+        };
+        const line_id_color_attachment_ref = vk.AttachmentReference{
+            .attachment = 2,
+            .layout = .color_attachment_optimal,
+        };
+        const surface_id_color_attachment_ref = vk.AttachmentReference{
+            .attachment = 3,
+            .layout = .color_attachment_optimal,
+        };
+
         const depth_attachment = vk.AttachmentDescription{
             .format = depth_format,
             .samples = .{ .@"1_bit" = true },
@@ -828,14 +884,20 @@ pub const VulkanContext = struct {
             .final_layout = .depth_stencil_attachment_optimal,
         };
         const depth_attachment_ref = vk.AttachmentReference{
-            .attachment = 1,
+            .attachment = 4,
             .layout = .depth_stencil_attachment_optimal,
         };
 
+        const attachment_references = [_]vk.AttachmentReference{
+            color_attachment_ref,
+            vertex_id_color_attachment_ref,
+            line_id_color_attachment_ref,
+            surface_id_color_attachment_ref,
+        };
         const subpass = vk.SubpassDescription{
             .pipeline_bind_point = .graphics,
-            .color_attachment_count = 1,
-            .p_color_attachments = @ptrCast(&color_attachment_ref),
+            .color_attachment_count = attachment_references.len,
+            .p_color_attachments = &attachment_references,
             .p_depth_stencil_attachment = @ptrCast(&depth_attachment_ref),
         };
 
@@ -848,7 +910,13 @@ pub const VulkanContext = struct {
             .dst_access_mask = .{ .color_attachment_write_bit = true, .depth_stencil_attachment_write_bit = true },
         };
 
-        const attachments = [_]vk.AttachmentDescription{ color_attachment, depth_attachment };
+        const attachments = [_]vk.AttachmentDescription{
+            color_attachment,
+            id_color_attachment, // vertex ids
+            id_color_attachment, // line ids
+            id_color_attachment, // surface ids
+            depth_attachment,
+        };
         const render_pass_create_info = vk.RenderPassCreateInfo{
             .attachment_count = attachments.len,
             .p_attachments = &attachments,
@@ -971,12 +1039,28 @@ pub const VulkanContext = struct {
             .alpha_blend_op = .add,
             .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
         };
+        const disabled_color_blend = vk.PipelineColorBlendAttachmentState{
+            .blend_enable = vk.FALSE,
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .zero,
+            .alpha_blend_op = .add,
+            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
+        };
 
+        const color_blend_attachments = [_]vk.PipelineColorBlendAttachmentState{
+            pipeline_color_blend_attachment_state,
+            disabled_color_blend,
+            disabled_color_blend,
+            disabled_color_blend,
+        };
         const pipeline_color_blend_state_create_info = vk.PipelineColorBlendStateCreateInfo{
             .logic_op_enable = vk.FALSE,
             .logic_op = .copy,
-            .attachment_count = 1,
-            .p_attachments = @ptrCast(&pipeline_color_blend_attachment_state),
+            .attachment_count = color_blend_attachments.len,
+            .p_attachments = &color_blend_attachments,
             .blend_constants = [_]f32{ 0, 0, 0, 0 },
         };
 
@@ -1029,6 +1113,9 @@ pub const VulkanContext = struct {
         for (framebuffers) |*fb| {
             const attachments = [_]vk.ImageView{
                 swapchain.swap_images[n_framebuffers].view,
+                swapchain.swap_images[n_framebuffers].vertex_ids_view,
+                swapchain.swap_images[n_framebuffers].line_ids_view,
+                swapchain.swap_images[n_framebuffers].surface_ids_view,
                 swapchain.depth_image_view,
             };
             const framebuffer_create_info = vk.FramebufferCreateInfo{
@@ -1235,11 +1322,11 @@ const Swapchain = struct {
         errdefer allocator.free(swap_images);
         var n_swap_images: usize = 0;
         for (images) |image| {
-            swap_images[n_swap_images] = try SwapImage.init(vk_ctx.device, image, surface_format.format);
+            swap_images[n_swap_images] = try SwapImage.init(vk_ctx, image, surface_format.format, extent);
             n_swap_images += 1;
         }
         errdefer {
-            for (swap_images) |si| si.deinit(&vk_ctx.device);
+            for (swap_images) |si| si.deinit(vk_ctx);
         }
 
         var next_image_acquired = try vk_ctx.device.createSemaphore(&.{}, null);
@@ -1273,7 +1360,7 @@ const Swapchain = struct {
 
     fn deinitExceptSwapchain(self: Swapchain, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) void {
         for (self.swap_images) |si| {
-            si.deinit(&vk_ctx.device);
+            si.deinit(vk_ctx);
         }
         allocator.free(self.swap_images);
         vk_ctx.device.destroyImageView(self.depth_image_view, null);
@@ -1362,11 +1449,24 @@ const Swapchain = struct {
 const SwapImage = struct {
     image: vk.Image,
     view: vk.ImageView,
+
+    vertex_ids: vk.Image,
+    vertex_ids_view: vk.ImageView,
+    vertex_ids_memory: vk.DeviceMemory,
+
+    line_ids: vk.Image,
+    line_ids_view: vk.ImageView,
+    line_ids_memory: vk.DeviceMemory,
+
+    surface_ids: vk.Image,
+    surface_ids_view: vk.ImageView,
+    surface_ids_memory: vk.DeviceMemory,
+
     image_acquired: vk.Semaphore,
     render_finished: vk.Semaphore,
     frame_fence: vk.Fence,
 
-    fn init(device: VulkanContext.Device, image: vk.Image, format: vk.Format) !SwapImage {
+    fn init(vk_ctx: *const VulkanContext, image: vk.Image, format: vk.Format, extent: vk.Extent2D) !SwapImage {
         const image_view_create_info = vk.ImageViewCreateInfo{
             .image = image,
             .view_type = vk.ImageViewType.@"2d",
@@ -1380,33 +1480,110 @@ const SwapImage = struct {
                 .layer_count = 1,
             },
         };
-        const image_view = try device.createImageView(&image_view_create_info, null);
-        errdefer device.destroyImageView(image_view, null);
+        const image_view = try vk_ctx.device.createImageView(&image_view_create_info, null);
+        errdefer vk_ctx.device.destroyImageView(image_view, null);
 
-        const image_acquired = try device.createSemaphore(&.{}, null);
-        errdefer device.destroySemaphore(image_acquired, null);
+        const image_acquired = try vk_ctx.device.createSemaphore(&.{}, null);
+        errdefer vk_ctx.device.destroySemaphore(image_acquired, null);
 
-        const render_finished = try device.createSemaphore(&.{}, null);
-        errdefer device.destroySemaphore(render_finished, null);
+        const render_finished = try vk_ctx.device.createSemaphore(&.{}, null);
+        errdefer vk_ctx.device.destroySemaphore(render_finished, null);
 
-        const frame_fence = try device.createFence(&.{ .flags = .{ .signaled_bit = true } }, null);
-        errdefer device.destroyFence(frame_fence, null);
+        const frame_fence = try vk_ctx.device.createFence(&.{ .flags = .{ .signaled_bit = true } }, null);
+        errdefer vk_ctx.device.destroyFence(frame_fence, null);
+
+        const ids_format = vk.Format.r32g32_uint;
+        const ids_image_info = vk.ImageCreateInfo{
+            .image_type = .@"2d",
+            .format = ids_format,
+            .extent = .{ .width = extent.width, .height = extent.height, .depth = 1 },
+            .mip_levels = 1,
+            .array_layers = 1,
+            .samples = .{ .@"1_bit" = true },
+            .tiling = .linear,
+            .usage = .{ .transfer_src_bit = true, .color_attachment_bit = true },
+            .sharing_mode = .exclusive,
+            .initial_layout = .undefined,
+        };
+        const vertex_ids = try vk_ctx.device.createImage(&ids_image_info, null);
+        const line_ids = try vk_ctx.device.createImage(&ids_image_info, null);
+        const surface_ids = try vk_ctx.device.createImage(&ids_image_info, null);
+
+        const image_memory_requirements = vk_ctx.device.getImageMemoryRequirements(vertex_ids);
+        const memory_type_index = try vk_ctx.findMemoryType(image_memory_requirements.memory_type_bits, .{ .device_local_bit = true });
+        const ids_image_memory_allocate_info = vk.MemoryAllocateInfo{
+            .allocation_size = image_memory_requirements.size,
+            .memory_type_index = memory_type_index,
+        };
+
+        const vertex_ids_memory = try vk_ctx.device.allocateMemory(&ids_image_memory_allocate_info, null);
+        const line_ids_memory = try vk_ctx.device.allocateMemory(&ids_image_memory_allocate_info, null);
+        const surface_ids_memory = try vk_ctx.device.allocateMemory(&ids_image_memory_allocate_info, null);
+
+        try vk_ctx.device.bindImageMemory(vertex_ids, vertex_ids_memory, 0);
+        try vk_ctx.device.bindImageMemory(line_ids, line_ids_memory, 0);
+        try vk_ctx.device.bindImageMemory(surface_ids, surface_ids_memory, 0);
+
+        var ids_image_view_create_info = vk.ImageViewCreateInfo{
+            .image = vertex_ids,
+            .view_type = vk.ImageViewType.@"2d",
+            .format = ids_format,
+            .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
+            .subresource_range = .{
+                .aspect_mask = .{ .color_bit = true },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        const vertex_ids_view = try vk_ctx.device.createImageView(&ids_image_view_create_info, null);
+
+        ids_image_view_create_info.image = line_ids;
+        const line_ids_view = try vk_ctx.device.createImageView(&ids_image_view_create_info, null);
+
+        ids_image_view_create_info.image = surface_ids;
+        const surface_ids_view = try vk_ctx.device.createImageView(&ids_image_view_create_info, null);
 
         return SwapImage{
             .image = image,
             .view = image_view,
+            .vertex_ids = vertex_ids,
+            .vertex_ids_view = vertex_ids_view,
+            .vertex_ids_memory = vertex_ids_memory,
+            .line_ids = line_ids,
+            .line_ids_view = line_ids_view,
+            .line_ids_memory = line_ids_memory,
+            .surface_ids = surface_ids,
+            .surface_ids_view = surface_ids_view,
+            .surface_ids_memory = surface_ids_memory,
             .image_acquired = image_acquired,
             .render_finished = render_finished,
             .frame_fence = frame_fence,
         };
     }
 
-    fn deinit(self: SwapImage, device: *const VulkanContext.Device) void {
-        self.waitForFence(device) catch return;
-        device.destroyImageView(self.view, null);
-        device.destroySemaphore(self.image_acquired, null);
-        device.destroySemaphore(self.render_finished, null);
-        device.destroyFence(self.frame_fence, null);
+    fn deinit(self: SwapImage, vk_ctx: *const VulkanContext) void {
+        self.waitForFence(&vk_ctx.device) catch return;
+
+        vk_ctx.device.destroyImageView(self.view, null);
+
+        vk_ctx.device.destroyImageView(self.vertex_ids_view, null);
+        vk_ctx.device.destroyImage(self.vertex_ids, null);
+        vk_ctx.device.freeMemory(self.vertex_ids_memory, null);
+
+        vk_ctx.device.destroyImageView(self.line_ids_view, null);
+        vk_ctx.device.destroyImage(self.line_ids, null);
+        vk_ctx.device.freeMemory(self.line_ids_memory, null);
+
+        vk_ctx.device.destroyImageView(self.surface_ids_view, null);
+        vk_ctx.device.destroyImage(self.surface_ids, null);
+        vk_ctx.device.freeMemory(self.surface_ids_memory, null);
+
+        vk_ctx.device.destroySemaphore(self.image_acquired, null);
+        vk_ctx.device.destroySemaphore(self.render_finished, null);
+        vk_ctx.device.destroyFence(self.frame_fence, null);
     }
 
     fn waitForFence(self: SwapImage, device: *const VulkanContext.Device) !void {
