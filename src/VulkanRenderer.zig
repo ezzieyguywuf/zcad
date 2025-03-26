@@ -9,6 +9,20 @@ const wnd = @import("WindowingContext.zig");
 
 pub const InstancedDataType = enum { Points, Lines, Triangles };
 
+pub const IdBuffer = std.ArrayListUnmanaged(u64);
+
+pub const IdBuffers = struct {
+    vertex_ids: IdBuffer,
+    line_ids: IdBuffer,
+    surface_ids: IdBuffer,
+
+    pub fn deinit(self: *IdBuffers, allocator: std.mem.Allocator) void {
+        self.vertex_ids.deinit(allocator);
+        self.line_ids.deinit(allocator);
+        self.surface_ids.deinit(allocator);
+    }
+};
+
 const InstancedData = struct {
     vertex_buffer: vk.Buffer,
     vertex_memory: vk.DeviceMemory,
@@ -233,6 +247,24 @@ pub const Renderer = struct {
         allocator.free(self.framebuffers);
     }
 
+    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) !IdBuffers {
+        const capacity = self.width * self.height;
+        // std.debug.print("Initing capacity of {d}\n", .{capacity});
+        var id_buffers = IdBuffers{
+            .vertex_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
+            .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
+            .surface_ids = .{},
+        };
+        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity);
+        try id_buffers.line_ids.appendNTimes(allocator, 0, capacity);
+
+        const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
+
+        return id_buffers;
+    }
+
     pub fn createCommandBuffers(
         self: *Renderer,
         device: *const VulkanContext.Device,
@@ -250,7 +282,7 @@ pub const Renderer = struct {
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
         };
         const id_clear = vk.ClearValue{
-            .color = .{ .uint_32 = .{ std.math.maxInt(u32), std.math.maxInt(u32), 0, 0 } },
+            .color = .{ .uint_32 = .{ 0, 0, 0, 0 } },
         };
         const depth_clear = vk.ClearValue{
             .depth_stencil = .{
@@ -461,52 +493,123 @@ pub const Renderer = struct {
         if (instanced_data.* == null or instanced_data.*.?.n_indices != indices.len) {
             instanced_data.* = try InstancedData.init(T, vk_ctx, vertices, indices);
         }
-        try transferToDevice(vk_ctx, T, vertices, self.command_pool, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
-        try transferToDevice(vk_ctx, u32, indices, self.command_pool, instanced_data.*.?.index_buffer, instanced_data.*.?.index_memory);
+        try self.transferToDevice(vk_ctx, T, vertices, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
+        try self.transferToDevice(vk_ctx, u32, indices, instanced_data.*.?.index_buffer, instanced_data.*.?.index_memory);
 
         try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
     }
 
+    // Data will be transferred from `data` into the `buffer` on the device
     fn transferToDevice(
+        self: *const Renderer,
         vk_ctx: *const VulkanContext,
         comptime T: type,
-        data: []const T,
-        command_pool: vk.CommandPool,
-        buffer: vk.Buffer,
-        memory: vk.DeviceMemory,
+        from_data: []const T,
+        to_buffer: vk.Buffer,
+        to_buffer_memory: vk.DeviceMemory,
     ) !void {
-        const staging_buffer, const staging_memory = try vk_ctx.createBuffer(T, data.len, .{ .transfer_src_bit = true });
+        const staging_buffer, const staging_memory = try vk_ctx.createBuffer(T, from_data.len, .{ .transfer_src_bit = true });
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
 
-        const host_data = try vk_ctx.device.mapMemory(staging_memory, 0, data.len, .{});
-        const gpu_data: [*]T = @ptrCast(@alignCast(host_data));
-        @memcpy(gpu_data, data[0..]);
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, from_data.len, .{});
+        const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
+        @memcpy(casted_mapped_data, from_data[0..]);
         vk_ctx.device.unmapMemory(staging_memory);
 
         try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
-        try vk_ctx.device.bindBufferMemory(buffer, memory, 0);
-        try copyBuffer(vk_ctx, command_pool, staging_buffer, buffer, data.len * @sizeOf(T));
+        try vk_ctx.device.bindBufferMemory(to_buffer, to_buffer_memory, 0);
+        try self.copyBuffer(vk_ctx, staging_buffer, to_buffer, from_data.len * @sizeOf(T));
     }
 
-    fn copyBuffer(vk_ctx: *const VulkanContext, command_pool: vk.CommandPool, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
+    // Data will be transferred into `data` from the `buffer` on the device
+    fn transferImageFromDevice(
+        self: *const Renderer,
+        vk_ctx: *const VulkanContext,
+        comptime T: type,
+        from_image: vk.Image,
+        to_data: std.ArrayListUnmanaged(T),
+    ) !void {
+        try self.transitionImageLayout(vk_ctx, from_image, .color_attachment_optimal, .transfer_src_optimal);
+
+        const staging_buffer, const staging_memory = try vk_ctx.createBuffer(T, to_data.capacity, .{ .transfer_dst_bit = true });
+        defer vk_ctx.device.destroyBuffer(staging_buffer, null);
+        defer vk_ctx.device.freeMemory(staging_memory, null);
+        try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
+
+        try self.copyImageToBuffer(vk_ctx, from_image, .transfer_src_optimal, staging_buffer);
+
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity, .{});
+        const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
+        // std.debug.print("transfered {d} bytes from gpu\n", .{to_data.capacity});
+        @memcpy(to_data.items, casted_mapped_data);
+        // std.debug.print("to_data.len = {d}\n", .{to_data.items.len});
+        vk_ctx.device.unmapMemory(staging_memory);
+    }
+
+    fn transitionImageLayout(
+        self: *const Renderer,
+        vk_ctx: *const VulkanContext,
+        image: vk.Image,
+        old_layout: vk.ImageLayout,
+        new_layout: vk.ImageLayout,
+    ) !void {
+        const command_buffer = try self.beginCommand(vk_ctx);
+
+        var src_stage: vk.PipelineStageFlags = .{};
+        var dst_stage: vk.PipelineStageFlags = .{};
+        var src_access_mask: vk.AccessFlags = .{};
+        var dst_access_mask: vk.AccessFlags = .{};
+
+        if (old_layout == .color_attachment_optimal and new_layout == .transfer_src_optimal) {
+            src_stage = .{ .fragment_shader_bit = true };
+            dst_stage = .{ .transfer_bit = true };
+            src_access_mask = .{ .shader_write_bit = true };
+            dst_access_mask = .{ .transfer_read_bit = true };
+        } else {
+            return error.UnsupportedLayoutTransition;
+        }
+
+        const barriers = [_]vk.ImageMemoryBarrier{
+            .{
+                .src_access_mask = src_access_mask,
+                .dst_access_mask = dst_access_mask,
+                .old_layout = old_layout,
+                .new_layout = new_layout,
+                .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+                .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+                .image = image,
+                .subresource_range = .{
+                    .aspect_mask = .{ .color_bit = true },
+                    .base_mip_level = 0,
+                    .level_count = 1,
+                    .base_array_layer = 0,
+                    .layer_count = 1,
+                },
+            },
+        };
+
+        command_buffer.pipelineBarrier(src_stage, dst_stage, .{}, 0, null, 0, null, barriers.len, &barriers);
+
+        try endCommand(vk_ctx, command_buffer);
+    }
+
+    fn beginCommand(self: *const Renderer, vk_ctx: *const VulkanContext) !VulkanContext.CommandBuffer {
         var command_buffer_handle: vk.CommandBuffer = undefined;
         try vk_ctx.device.allocateCommandBuffers(&.{
-            .command_pool = command_pool,
+            .command_pool = self.command_pool,
             .level = .primary,
             .command_buffer_count = 1,
         }, @ptrCast(&command_buffer_handle));
-        defer vk_ctx.device.freeCommandBuffers(command_pool, 1, @ptrCast(&command_buffer_handle));
+        // defer vk_ctx.device.freeCommandBuffers(self.command_pool, 1, @ptrCast(&command_buffer_handle));
 
         const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, vk_ctx.device.wrapper);
 
         try command_buffer.beginCommandBuffer(&.{ .flags = .{ .one_time_submit_bit = true } });
-        const region = vk.BufferCopy{
-            .src_offset = 0,
-            .dst_offset = 0,
-            .size = size,
-        };
-        command_buffer.copyBuffer(src, dst, 1, @ptrCast(&region));
+        return command_buffer;
+    }
+
+    fn endCommand(vk_ctx: *const VulkanContext, command_buffer: VulkanContext.CommandBuffer) !void {
         try command_buffer.endCommandBuffer();
 
         const submit_info = vk.SubmitInfo{
@@ -516,6 +619,45 @@ pub const Renderer = struct {
         };
         try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
+        // vk_ctx.device.freeCommandBuffers(self.command_pool, 1, &command_buffer);
+    }
+
+    fn copyBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
+        const command_buffer = try self.beginCommand(vk_ctx);
+
+        const regions = [_]vk.BufferCopy{
+            .{
+                .src_offset = 0,
+                .dst_offset = 0,
+                .size = size,
+            },
+        };
+        command_buffer.copyBuffer(src, dst, 1, &regions);
+
+        try endCommand(vk_ctx, command_buffer);
+    }
+
+    fn copyImageToBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src_image: vk.Image, src_image_layout: vk.ImageLayout, dst_buffer: vk.Buffer) !void {
+        const command_buffer = try self.beginCommand(vk_ctx);
+
+        const buffer_image_copy_regions = [_]vk.BufferImageCopy{
+            .{
+                .buffer_offset = 0,
+                .buffer_row_length = 0,
+                .buffer_image_height = 0,
+                .image_subresource = .{
+                    .aspect_mask = .{ .color_bit = true },
+                    .mip_level = 0,
+                    .base_array_layer = 0,
+                    .layer_count = 1,
+                },
+                .image_offset = .{ .x = 0, .y = 0, .z = 0 },
+                .image_extent = .{ .width = self.width, .height = self.height, .depth = 1 },
+            },
+        };
+        command_buffer.copyImageToBuffer(src_image, src_image_layout, dst_buffer, 1, &buffer_image_copy_regions);
+
+        try endCommand(vk_ctx, command_buffer);
     }
 
     pub fn render(
@@ -579,30 +721,17 @@ pub const WindowingInfo = union(wnd.WindowingType) {
 };
 
 pub const VulkanContext = struct {
-    // vulkan
-    const _apis: []const vk.ApiInfo = &.{
-        vk.features.version_1_0,
-        vk.features.version_1_1,
-        vk.features.version_1_2,
-        vk.features.version_1_3,
-        vk.extensions.khr_surface,
-        vk.extensions.khr_swapchain,
-        vk.extensions.khr_wayland_surface,
-        vk.extensions.khr_xlib_surface,
-        // vk.extensions.ext_debug_utils,
-    };
-
     // These are types: they contain functions that e.g. require you to provide the
     // instance or device
-    const BaseDispatch = vk.BaseWrapper(_apis);
-    const InstanceDispatch = vk.InstanceWrapper(_apis);
-    const DeviceDispatch = vk.DeviceWrapper(_apis);
+    const BaseWrapper = vk.BaseWrapper;
+    const InstanceWrapper = vk.InstanceWrapper;
+    const DeviceWrapper = vk.DeviceWrapper;
 
     // These are also types: they hold the instance or device or w/e so you don't
     // have to pass those in.
-    const Instance = vk.InstanceProxy(_apis);
-    const Device = vk.DeviceProxy(_apis);
-    const CommandBuffer = vk.CommandBufferProxy(_apis);
+    const Instance = vk.InstanceProxy;
+    const Device = vk.DeviceProxy;
+    const CommandBuffer = vk.CommandBufferProxy;
 
     instance: Instance,
     surface: vk.SurfaceKHR,
@@ -623,13 +752,13 @@ pub const VulkanContext = struct {
             .name = "vkGetInstanceProcAddr",
             .library_name = "vulkan",
         });
-        const base_dispatch = try BaseDispatch.load(get_instance_proc_addr);
+        const base_dispatch = BaseWrapper.load(get_instance_proc_addr);
 
         const application_info = vk.ApplicationInfo{
             .p_application_name = "zcad vulkan",
-            .application_version = vk.makeApiVersion(0, 0, 0, 0),
-            .engine_version = vk.makeApiVersion(0, 0, 0, 0),
-            .api_version = vk.API_VERSION_1_3,
+            .application_version = @bitCast(vk.makeApiVersion(0, 0, 0, 0)),
+            .engine_version = @bitCast(vk.makeApiVersion(0, 0, 0, 0)),
+            .api_version = @bitCast(vk.API_VERSION_1_3),
         };
 
         // TODO: add checks to ensure the requested extensions are supported, see
@@ -638,7 +767,7 @@ pub const VulkanContext = struct {
             vk.extensions.khr_surface.name,
             vk.extensions.khr_wayland_surface.name,
             vk.extensions.khr_xlib_surface.name,
-            // vk.extensions.ext_debug_utils.name,
+                // vk.extensions.ext_debug_utils.name,
         };
         const enabled_layers = if (builtin.mode == .Debug)
             [1][*:0]const u8{
@@ -654,9 +783,9 @@ pub const VulkanContext = struct {
             .pp_enabled_layer_names = &enabled_layers,
         };
         const instance_handle = try base_dispatch.createInstance(&create_instance_info, null);
-        const instance_dispatch = try allocator.create(InstanceDispatch);
+        const instance_dispatch = try allocator.create(InstanceWrapper);
         errdefer allocator.destroy(instance_dispatch);
-        instance_dispatch.* = try InstanceDispatch.load(instance_handle, base_dispatch.dispatch.vkGetInstanceProcAddr);
+        instance_dispatch.* = InstanceWrapper.load(instance_handle, base_dispatch.dispatch.vkGetInstanceProcAddr.?);
         const instance = Instance.init(instance_handle, instance_dispatch);
         errdefer instance.destroyInstance(null);
 
@@ -688,15 +817,13 @@ pub const VulkanContext = struct {
         outer: for (physical_devices) |physical_device_candidate| {
             physical_device_properties = instance.getPhysicalDeviceProperties(physical_device_candidate);
             std.debug.print("Checking physical device {s}\n", .{physical_device_properties.device_name});
-            const api_version = physical_device_properties.api_version;
-            const major_version = vk.apiVersionMajor(api_version);
-            const minor_version = vk.apiVersionMinor(api_version);
-            if (vk.apiVersionMajor(api_version) < 1) {
-                std.debug.print("  Major version {d} is too low, expected at least 1\n", .{major_version});
+            const api_version: vk.Version = @bitCast(physical_device_properties.api_version);
+            if (api_version.major < 1) {
+                std.debug.print("  Major version {d} is too low, expected at least 1\n", .{api_version.major});
                 continue;
             }
-            if (vk.apiVersionMinor(api_version) < 4) {
-                std.debug.print("  Minor version {d} is too low, expected at least 3\n", .{minor_version});
+            if (api_version.minor < 4) {
+                std.debug.print("  Minor version {d} is too low, expected at least 3\n", .{api_version.minor});
                 continue;
             }
 
@@ -728,16 +855,9 @@ pub const VulkanContext = struct {
             }
 
             std.debug.print("  MATCH on {s}\n", .{physical_device_properties.device_name});
-            std.debug.print("  Api Version: {d}.{d}.{d}\n", .{
-                vk.apiVersionMajor(physical_device_properties.api_version),
-                vk.apiVersionMinor(physical_device_properties.api_version),
-                vk.apiVersionPatch(physical_device_properties.api_version),
-            });
-            std.debug.print("  Driver Version: {d}.{d}.{d}\n", .{
-                vk.apiVersionMajor(physical_device_properties.driver_version),
-                vk.apiVersionMinor(physical_device_properties.driver_version),
-                vk.apiVersionPatch(physical_device_properties.driver_version),
-            });
+            std.debug.print("  Api Version: {d}.{d}.{d}\n", .{ api_version.major, api_version.minor, api_version.patch });
+            const driver_version: vk.Version = @bitCast(physical_device_properties.driver_version);
+            std.debug.print("  Driver Version: {d}.{d}.{d}\n", .{ driver_version.major, driver_version.minor, driver_version.patch });
             maybe_physical_device = physical_device_candidate;
             break;
         }
@@ -803,9 +923,9 @@ pub const VulkanContext = struct {
             .p_enabled_features = &required_device_features,
         };
         const device_handle = try instance.createDevice(physical_device, &device_create_info, null);
-        const device_dispatch = try allocator.create(DeviceDispatch);
+        const device_dispatch = try allocator.create(DeviceWrapper);
         errdefer allocator.destroy(device_dispatch);
-        device_dispatch.* = try DeviceDispatch.load(device_handle, instance.wrapper.dispatch.vkGetDeviceProcAddr);
+        device_dispatch.* = DeviceWrapper.load(device_handle, instance.wrapper.dispatch.vkGetDeviceProcAddr.?);
         const device = Device.init(device_handle, device_dispatch);
         errdefer device.destroyDevice(null);
 

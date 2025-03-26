@@ -1,16 +1,17 @@
 .{
-    .name = "zcad",
+    .name = .zcad,
+    .fingerprint = 0x596e153ab7cba341,
     .version = "0.0.0",
     .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
-        .@"zig-wayland" = .{
-            .url = "https://codeberg.org/ifreund/zig-wayland/archive/next-zig.tar.gz",
-            .hash = "1220b00f822505dfa3db2a91f7a7fa14f9357780b1a4093ba27193b2284d52925093",
+        .zig_wayland = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/master.tar.gz",
+            .hash = "1220a686142edf1174287fbde3e4f378c5cea9f9cfd3e0e0e96cb2bcde0e9d5dcaa8",
         },
         .vulkan_zig = .{
             .url = "https://github.com/Snektron/vulkan-zig/archive/master.tar.gz",
-            .hash = "122096b4021c4bb35d373d589a31237e2ac834969ea50401d73cc50780aaec8ea367",
+            .hash = "1220b747471f0374b16963c625aea9dc4530dce4d74e048faff845bd710a21abac2f",
         },
         .vulkan_headers = .{
             .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.304.tar.gz",
@@ -18,7 +19,7 @@
         },
         .zmath = .{
             .url = "https://github.com/zig-gamedev/zmath/archive/main.tar.gz",
-            .hash = "1220c1ab7d1e49106f59c6adb4004befdb95525a72056364a663757aaa1365aae64a",
+            .hash = "1220ceef2c4d999e475a8534ddff661417adf0b37dfa861cde2dbd42f52a9b6933f2",
         },
     },
 

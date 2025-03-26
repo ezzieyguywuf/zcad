@@ -6,14 +6,7 @@ const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
 
-const AppContext = struct {
-    prev_input_state: wnd.InputState,
-    eye: zm.Vec,
-    focus_point: zm.Vec,
-    up: zm.Vec,
-    mvp_ubo: vkr.MVPUniformBufferObject,
-    should_exit: bool,
-};
+const AppContext = struct { prev_input_state: wnd.InputState, eye: zm.Vec, focus_point: zm.Vec, up: zm.Vec, mvp_ubo: vkr.MVPUniformBufferObject, should_exit: bool, should_fetch_id_buffers: bool, pointer_x: usize, pointer_y: usize };
 
 const OsWindow = union(wnd.WindowingType) {
     xlib: *x11.X11Context(*AppContext),
@@ -37,6 +30,12 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     const delta_radians = std.math.pi / @as(f64, @floatCast(368));
 
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
+        if (input_state.left_button == false and app_ctx.prev_input_state.left_button == true) {
+            app_ctx.should_fetch_id_buffers = true;
+            app_ctx.pointer_x = @intFromFloat(input_state.pointer_x);
+            app_ctx.pointer_y = @intFromFloat(input_state.pointer_y);
+            // std.debug.print("clicked, x: {d}, y: {d}\n", .{ x_pos, y_pos });
+        }
         if (input_state.left_button) {
             // TODO rotation around focus_point
             const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
@@ -103,6 +102,9 @@ pub fn main() !void {
             .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 1000.0),
         },
         .should_exit = false,
+        .should_fetch_id_buffers = false,
+        .pointer_x = 0,
+        .pointer_y = 0,
     };
 
     var args = try std.process.argsWithAllocator(allocator);
@@ -265,7 +267,27 @@ pub fn main() !void {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
     }
+
+    var id_buffers = vkr.IdBuffers{
+        .vertex_ids = .{},
+        .line_ids = .{},
+        .surface_ids = .{},
+    };
+    defer id_buffers.deinit(allocator);
+
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
+        if (app_ctx.should_fetch_id_buffers) {
+            app_ctx.should_fetch_id_buffers = false;
+            id_buffers.deinit(allocator);
+            id_buffers = try renderer.getIdBuffers(allocator, &vk_ctx);
+            const i = app_ctx.pointer_x + app_ctx.pointer_y * @as(usize, @intCast(wnd_ctx.width));
+            if (i > id_buffers.vertex_ids.items.len) {
+                std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
+            } else {
+                std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
+                std.debug.print("got line_id: {d}\n", .{id_buffers.line_ids.items[i]});
+            }
+        }
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
             app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);

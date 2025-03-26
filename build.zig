@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Scanner = @import("zig-wayland").Scanner;
+const Scanner = @import("zig_wayland").Scanner;
 
 pub fn build(b: *std.Build) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
