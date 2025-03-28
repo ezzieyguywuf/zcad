@@ -5,12 +5,18 @@ Another attempt at my own Computer Aided Design (CAD) package.
 very much WIP. Currently I can render a few things (see demo).
 
 # demo
-Aliasing on left, AntiAliasing on the right
 
-[Screen recording 2025-03-06 10.07.15 PM.webm](https://github.com/user-attachments/assets/f5e516ba-96fb-41df-93d1-37c347230246)
+Proof-of-concept for mouse picking. Currently hard-coding "1" for each line, but this shows the data originating from the fragment buffer and getting transferred and used on the cpu side.
+
+[Screen recording 2025-03-27 10.37.16 PM.webm](https://github.com/user-attachments/assets/58a3ed53-2702-4dc8-a3e3-d77580c4a3ce)
+
 
 <details>
   <summary> old demos </summary>
+  
+Aliasing on left, AntiAliasing on the right
+
+[Screen recording 2025-03-06 10.07.15 PM.webm](https://github.com/user-attachments/assets/f5e516ba-96fb-41df-93d1-37c347230246)
 
 3d finally works
   
