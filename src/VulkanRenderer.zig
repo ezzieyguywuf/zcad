@@ -754,6 +754,24 @@ pub const VulkanContext = struct {
         });
         const base_dispatch = BaseWrapper.load(get_instance_proc_addr);
 
+        // Query available instance layers
+        var available_layer_properties_count: u32 = 0;
+        var result = try base_dispatch.enumerateInstanceLayerProperties(&available_layer_properties_count, null);
+        if (result != .success) {
+            std.debug.print("Failed to get instance layer property count: {any}\n", .{result});
+            return error.InstanceLayerEnumerationFailed;
+        }
+
+        const available_layer_properties_alloc = try allocator.alloc(vk.LayerProperties, available_layer_properties_count);
+        defer allocator.free(available_layer_properties_alloc); // Ensure this is freed if an error occurs later
+
+        result = try base_dispatch.enumerateInstanceLayerProperties(&available_layer_properties_count, available_layer_properties_alloc.ptr);
+        if (result != .success) {
+            std.debug.print("Failed to enumerate instance layer properties: {any}\n", .{result});
+            return error.InstanceLayerEnumerationFailed;
+        }
+        const available_layers = available_layer_properties_alloc[0..available_layer_properties_count];
+
         const application_info = vk.ApplicationInfo{
             .p_application_name = "zcad vulkan",
             .application_version = @bitCast(vk.makeApiVersion(0, 0, 0, 0)),
@@ -767,20 +785,41 @@ pub const VulkanContext = struct {
             vk.extensions.khr_surface.name,
             vk.extensions.khr_wayland_surface.name,
             vk.extensions.khr_xlib_surface.name,
-                // vk.extensions.ext_debug_utils.name,
         };
-        const enabled_layers = if (builtin.mode == .Debug)
-            [1][*:0]const u8{
-                "VK_LAYER_KHRONOS_validation",
+
+        var final_enabled_layer_count: u32 = 0;
+        var final_enabled_layer_names_ptr: ?[*]const [*:0]const u8 = null;
+        const validation_layer_name_str = "VK_LAYER_KHRONOS_validation";
+
+        if (builtin.mode == .Debug) {
+            std.debug.print("Available Vulkan Instance Layers:\n", .{});
+            var validation_layer_found = false;
+            for (available_layers) |layer_prop| {
+                const layer_name_slice = std.mem.sliceTo(layer_prop.layer_name[0..], 0);
+                std.debug.print("  - {s}\n", .{layer_name_slice});
+                if (std.mem.eql(u8, layer_name_slice, validation_layer_name_str)) {
+                    validation_layer_found = true;
+                    break;
+                }
             }
-        else
-            [0][*:0]const u8{};
+
+            if (validation_layer_found) {
+                // Keep this static or ensure its lifetime exceeds createInstance call
+                const validation_layer_to_enable = [_][*:0]const u8{validation_layer_name_str};
+                final_enabled_layer_names_ptr = &validation_layer_to_enable;
+                final_enabled_layer_count = 1;
+                std.debug.print("Enabling Vulkan validation layer: {s}\n", .{validation_layer_name_str});
+            } else {
+                std.debug.print("WARNING: Vulkan validation layer ({s}) not found among available layers. Proceeding without it.\n", .{validation_layer_name_str});
+            }
+        }
+
         const create_instance_info = vk.InstanceCreateInfo{
             .p_application_info = &application_info,
             .enabled_extension_count = instance_extensions.len,
             .pp_enabled_extension_names = &instance_extensions,
-            .enabled_layer_count = enabled_layers.len,
-            .pp_enabled_layer_names = &enabled_layers,
+            .enabled_layer_count = final_enabled_layer_count,
+            .pp_enabled_layer_names = final_enabled_layer_names_ptr,
         };
         const instance_handle = try base_dispatch.createInstance(&create_instance_info, null);
         const instance_dispatch = try allocator.create(InstanceWrapper);
