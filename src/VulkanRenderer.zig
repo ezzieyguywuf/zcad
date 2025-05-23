@@ -253,14 +253,16 @@ pub const Renderer = struct {
         var id_buffers = IdBuffers{
             .vertex_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
             .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-            .surface_ids = .{},
+            .surface_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
         };
-        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity);
-        try id_buffers.line_ids.appendNTimes(allocator, 0, capacity);
+        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
+        try id_buffers.line_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for line_ids, assuming maxInt means "no line"
+        try id_buffers.surface_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for surface_ids, "no surface"
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
         try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
         try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, id_buffers.surface_ids);
 
         return id_buffers;
     }

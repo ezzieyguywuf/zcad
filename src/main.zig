@@ -218,6 +218,32 @@ pub fn main() !void {
 
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
+
+    var rendered_vertices = RenderedVertices.init();
+    defer rendered_vertices.deinit(allocator);
+
+    var rendered_faces = RenderedFaces.init();
+    defer rendered_faces.deinit(allocator);
+
+    const quad_points = [_]Point{
+        .{ .x = -2, .y = -2, .z = 0 },
+        .{ .x =  2, .y = -2, .z = 0 },
+        .{ .x =  2, .y =  2, .z = 0 },
+        .{ .x = -2, .y =  2, .z = 0 },
+    };
+    try rendered_faces.addFace(allocator, &quad_points, .{ 0.8, 0.8, 0.2 }); // Yellow color
+
+    const triangle_points = [_]Point{
+        .{ .x = -4, .y = -2, .z = -1 },
+        .{ .x = -2, .y = -2, .z = -1 },
+        .{ .x = -3, .y =  0, .z = -1 },
+    };
+    try rendered_faces.addFace(allocator, &triangle_points, .{0.2, 0.8, 0.8}); // Some other color
+
+    try rendered_vertices.addVertex(allocator, .{ -5, -5, 1 }, .{ 0.0, 1.0, 0.0 }); // Green
+    try rendered_vertices.addVertex(allocator, .{  5, -5, 1 }, .{ 0.0, 1.0, 1.0 }); // Cyan
+    try rendered_vertices.addVertex(allocator, .{  0,  5, 1 }, .{ 1.0, 0.0, 1.0 }); // Magenta
+
     try rendered_lines.addLine(allocator, try Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
         .{ .x = 5, .y = -5, .z = -5 },
@@ -271,7 +297,8 @@ pub fn main() !void {
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
@@ -488,6 +515,119 @@ pub const RenderedLines = struct {
         self.next_uid += 1;
         if (self.next_uid == std.math.maxInt(u64)) {
             return error.RanOutOfUidsForRenderedLines;
+        }
+    }
+};
+
+pub const RenderedFaces = struct {
+    vulkan_vertices: std.ArrayListUnmanaged(vkr.Vertex),
+    vulkan_indices: std.ArrayListUnmanaged(u32),
+    next_uid: u64,
+
+    pub fn init() RenderedFaces {
+        return RenderedFaces{
+            .vulkan_vertices = .{},
+            .vulkan_indices = .{},
+            .next_uid = 0,
+        };
+    }
+
+    pub fn deinit(self: *RenderedFaces, allocator: std.mem.Allocator) void {
+        self.vulkan_vertices.deinit(allocator);
+        self.vulkan_indices.deinit(allocator);
+    }
+
+    // Adds a face, triangulating it using a simple fan algorithm.
+    // Assumes points are coplanar and form a convex polygon.
+    // Takes an array slice of `Point` structs and a color.
+    pub fn addFace(
+        self: *RenderedFaces,
+        allocator: std.mem.Allocator,
+        points: []const Point,
+        color: [3]f32,
+    ) !void {
+        if (points.len < 3) {
+            return error.NotEnoughPointsForFace; // Need at least 3 points for a face
+        }
+
+        const base_vertex_index: u32 = @intCast(self.vulkan_vertices.items.len);
+        // const current_face_uid_lower: u32 = @truncate(self.next_uid);
+        // const current_face_uid_upper: u32 = @truncate(self.next_uid >> 32);
+
+        // Add all points of the polygon as vertices
+        for (points) |p| {
+            // TODO: The vkr.Vertex struct does not have UID fields.
+            // If individual vertex UIDs or face UIDs per vertex are needed for detailed picking
+            // directly in the shader via vertex attributes (like RenderedLines),
+            // vkr.Vertex would need to be extended, or a different vertex struct used.
+            // For now, we are adding vertices without specific UID attributes.
+            // The face UID is managed by RenderedFaces and could be used with the
+            // surface_ids buffer in the renderer.
+            try self.vulkan_vertices.append(allocator, .{
+                .pos = .{ @floatFromInt(p.x), @floatFromInt(p.y), @floatFromInt(p.z) },
+                .color = color,
+            });
+        }
+
+        // Fan triangulation:
+        // Triangle 1: p0, p1, p2
+        // Triangle 2: p0, p2, p3
+        // ...
+        for (1..(points.len - 1)) |i| {
+            try self.vulkan_indices.append(allocator, base_vertex_index); // p0
+            try self.vulkan_indices.append(allocator, base_vertex_index + @intCast(i)); // pi
+            try self.vulkan_indices.append(allocator, base_vertex_index + @intCast(i) + 1); // p(i+1)
+        }
+
+        self.next_uid += 1;
+        if (self.next_uid == std.math.maxInt(u64)) {
+            return error.RanOutOfUidsForRenderedFaces;
+        }
+    }
+};
+
+pub const RenderedVertices = struct {
+    vulkan_vertices: std.ArrayListUnmanaged(vkr.Vertex),
+    vulkan_indices: std.ArrayListUnmanaged(u32),
+    next_uid: u64, // For potential future use with picking
+
+    pub fn init() RenderedVertices {
+        return RenderedVertices{
+            .vulkan_vertices = .{},
+            .vulkan_indices = .{},
+            .next_uid = 0,
+        };
+    }
+
+    pub fn deinit(self: *RenderedVertices, allocator: std.mem.Allocator) void {
+        self.vulkan_vertices.deinit(allocator);
+        self.vulkan_indices.deinit(allocator);
+    }
+
+    // Adds a single vertex.
+    // For now, each vertex is its own indexed entity.
+    pub fn addVertex(
+        self: *RenderedVertices,
+        allocator: std.mem.Allocator,
+        pos: [3]f32,
+        color: [3]f32,
+    ) !void {
+        const n_vertices: u32 = @intCast(self.vulkan_vertices.items.len);
+
+        try self.vulkan_vertices.append(allocator, .{
+            .pos = pos,
+            .color = color,
+        });
+        try self.vulkan_indices.append(allocator, n_vertices);
+
+        // Increment UID if we want to assign a unique ID per vertex
+        // For now, UIDs might not be directly used by the shader for points,
+        // but good to have for consistency or future enhancements.
+        // If vertex picking is implemented, this UID could be used.
+        self.next_uid += 1;
+        if (self.next_uid == std.math.maxInt(u64)) {
+            // Or handle this more gracefully depending on requirements
+            return error.RanOutOfUidsForRenderedVertices;
         }
     }
 };
@@ -782,4 +922,98 @@ test "RenderedLines UID generation" {
     try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[23].uid()); // Last vertex of third line
     try std.testing.expectEqual(@as(u64, 3), rendered_lines.next_uid);
     try std.testing.expectEqual(@as(usize, 24), rendered_lines.vulkan_vertices.items.len);
+}
+
+test "RenderedVertices basic operations" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var vertices = RenderedVertices.init();
+    defer vertices.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), vertices.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 0), vertices.vulkan_indices.items.len);
+    try std.testing.expectEqual(@as(u64, 0), vertices.next_uid);
+
+    try vertices.addVertex(allocator, .{ 1.0, 2.0, 3.0 }, .{ 1.0, 0.0, 0.0 });
+    try std.testing.expectEqual(@as(usize, 1), vertices.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 1), vertices.vulkan_indices.items.len);
+    try std.testing.expectEqual(@as(u64, 1), vertices.next_uid);
+    try std.testing.expectEqualSlices(f32, &.{ 1.0, 2.0, 3.0 }, &vertices.vulkan_vertices.items[0].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 1.0, 0.0, 0.0 }, &vertices.vulkan_vertices.items[0].color);
+    try std.testing.expectEqual(@as(u32, 0), vertices.vulkan_indices.items[0]);
+
+    try vertices.addVertex(allocator, .{ 4.0, 5.0, 6.0 }, .{ 0.0, 1.0, 0.0 });
+    try std.testing.expectEqual(@as(usize, 2), vertices.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 2), vertices.vulkan_indices.items.len);
+    try std.testing.expectEqual(@as(u64, 2), vertices.next_uid);
+    try std.testing.expectEqualSlices(f32, &.{ 4.0, 5.0, 6.0 }, &vertices.vulkan_vertices.items[1].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0, 0.0 }, &vertices.vulkan_vertices.items[1].color);
+    try std.testing.expectEqual(@as(u32, 1), vertices.vulkan_indices.items[1]);
+
+    // Test UID overflow error if RanOutOfUidsForRenderedVertices is a public error
+    // For now, this is not tested as the error is not explicitly made public.
+}
+
+test "RenderedFaces basic operations and triangulation" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var faces = RenderedFaces.init();
+    defer faces.deinit(allocator);
+
+    // Test initial state
+    try std.testing.expectEqual(@as(usize, 0), faces.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 0), faces.vulkan_indices.items.len);
+    try std.testing.expectEqual(@as(u64, 0), faces.next_uid);
+
+    // Test adding a triangle
+    const p_triangle = [_]Point{
+        .{ .x = 0, .y = 0, .z = 0 },
+        .{ .x = 1, .y = 0, .z = 0 },
+        .{ .x = 0, .y = 1, .z = 0 },
+    };
+    const color_triangle = [_]f32{1.0, 0.0, 0.0}; // Red
+    try faces.addFace(allocator, &p_triangle, color_triangle);
+
+    try std.testing.expectEqual(@as(usize, 3), faces.vulkan_vertices.items.len); // 3 vertices for a triangle
+    try std.testing.expectEqual(@as(usize, 3), faces.vulkan_indices.items.len);  // 1 triangle = 3 indices (0,1,2)
+    try std.testing.expectEqual(@as(u64, 1), faces.next_uid);
+    // Check vertex data
+    try std.testing.expectEqualSlices(f32, &.{0.0,0.0,0.0}, &faces.vulkan_vertices.items[0].pos);
+    try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[0].color);
+    try std.testing.expectEqualSlices(f32, &.{1.0,0.0,0.0}, &faces.vulkan_vertices.items[1].pos);
+    try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[1].color);
+    try std.testing.expectEqualSlices(f32, &.{0.0,1.0,0.0}, &faces.vulkan_vertices.items[2].pos);
+    try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[2].color);
+    // Check indices for fan triangulation (base_index = 0)
+    try std.testing.expectEqualSlices(u32, &.{0, 1, 2}, faces.vulkan_indices.items);
+
+    // Test adding a quad (should be triangulated into 2 triangles)
+    const p_quad = [_]Point{
+        .{ .x = 0, .y = 0, .z = 1 }, // p0
+        .{ .x = 1, .y = 0, .z = 1 }, // p1
+        .{ .x = 1, .y = 1, .z = 1 }, // p2
+        .{ .x = 0, .y = 1, .z = 1 }, // p3
+    };
+    const color_quad = [_]f32{0.0, 1.0, 0.0}; // Green
+    try faces.addFace(allocator, &p_quad, color_quad);
+
+    try std.testing.expectEqual(@as(usize, 3 + 4), faces.vulkan_vertices.items.len); // 3 from triangle + 4 from quad
+    try std.testing.expectEqual(@as(usize, 3 + 6), faces.vulkan_indices.items.len);  // 3 from triangle + 6 from quad (2 triangles)
+    try std.testing.expectEqual(@as(u64, 2), faces.next_uid);
+    // Check new quad vertex data (starts at index 3)
+    try std.testing.expectEqualSlices(f32, &.{0.0,0.0,1.0}, &faces.vulkan_vertices.items[3].pos);
+    try std.testing.expectEqualSlices(f32, &color_quad, &faces.vulkan_vertices.items[3].color);
+    // Check new quad indices (base_index = 3)
+    // Triangle 1: p0, p1, p2 => indices 3, 4, 5
+    // Triangle 2: p0, p2, p3 => indices 3, 5, 6
+    const expected_quad_indices = [_]u32{ 3,4,5, 3,5,6 };
+    try std.testing.expectEqualSlices(u32, &expected_quad_indices, faces.vulkan_indices.items[3..]);
+
+    // Test error for not enough points
+    const p_line = [_]Point{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = 1, .y = 0, .z = 0 } };
+    try std.testing.expectError(error.NotEnoughPointsForFace, faces.addFace(allocator, &p_line, color_quad));
 }
