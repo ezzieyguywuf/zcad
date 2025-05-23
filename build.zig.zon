@@ -21,6 +21,10 @@
             .url = "https://github.com/zig-gamedev/zmath/archive/6a0747fe6834e58793500e05953c4c6ca045d3e1.zip",
             .hash = "1220c89074ae4a25372ae06fc61ee282326324ca9845fcb786284ec86faafaed996f",
         },
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig?ref=master#bf66b28690967fec187bc3074ebdd2cf748e172e",
+            .hash = "httpz-0.0.0-PNVzrDm1BgBS1NqfP2uTPocAxDSTjZNJKr41Q_S63cFB",
+        },
     },
 
     .paths = .{

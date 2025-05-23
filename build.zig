@@ -55,6 +55,14 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    // httpz dependency, already added to exe
+    const httpz_dep = b.dependency("httpz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("httpz", httpz_dep.module("httpz"));
+    // HttpServer.zig is now part of the main 'exe' through imports in main.zig
+
     try addShader(allocator, b, exe, "vertex_shader", "shaders/triangle.vert");
     try addShader(allocator, b, exe, "fragment_shader", "shaders/triangle.frag");
     try addShader(allocator, b, exe, "circle_vertex_shader", "shaders/circle.vert");
@@ -69,11 +77,60 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .filter = test_filter,
     });
+    // Ensure main executable tests also have httpz if they need it (though they likely don't directly)
+    exe_unit_tests.root_module.addImport("httpz", httpz_dep.module("httpz"));
+
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
+    // Create modules for files that HttpServer_test.zig needs to import
+    const main_module = b.addModule("main", .{
+        .root_source_file = b.path("src/main.zig"),
+        // Add other dependencies of main.zig if necessary for it to be a valid module
+        // For example, it might need wayland, vulkan, zmath
+    });
+    // Add imports that main.zig itself needs, to main_module
+    main_module.addImport("wayland", wayland);
+    main_module.addImport("vulkan", vulkan);
+    main_module.addImport("zmath", zmath.module("root"));
+    // main_module might need httpz too if it directly calls HttpServer stuff that uses httpz types in signatures
+    // main_module.addImport("httpz", httpz_dep.module("httpz"));
+
+
+    const vkr_module = b.addModule("VulkanRenderer", .{
+        .root_source_file = b.path("src/VulkanRenderer.zig"),
+    });
+    vkr_module.addImport("vulkan", vulkan);
+    vkr_module.addImport("zmath", zmath.module("root"));
+
+    const http_server_module = b.addModule("HttpServer", .{
+        .root_source_file = b.path("src/HttpServer.zig"),
+    });
+    http_server_module.addImport("main", main_module);
+    http_server_module.addImport("VulkanRenderer", vkr_module);
+    http_server_module.addImport("httpz", httpz_dep.module("httpz"));
+
+
+    // HTTP Server Tests
+    const server_tests = b.addTest(.{
+        .name = "http-server-tests",
+        .root_source_file = b.path("src/HttpServer_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filter = test_filter,
+    });
+    server_tests.root_module.addImport("main", main_module);
+    server_tests.root_module.addImport("VulkanRenderer", vkr_module);
+    server_tests.root_module.addImport("HttpServer", http_server_module);
+    server_tests.root_module.addImport("httpz", httpz_dep.module("httpz")); // For http.Client
+    server_tests.root_module.addImport("zmath", zmath.module("root")); // If any test helpers use zmath
+    server_tests.linkLibC(); // For networking
+
+    const run_server_tests = b.addRunArtifact(server_tests);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_server_tests.step);
 }
 
 fn addShader(

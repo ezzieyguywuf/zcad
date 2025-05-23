@@ -5,6 +5,7 @@ const wnd = @import("WindowingContext.zig");
 const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
+const HttpServer = @import("HttpServer.zig");
 
 const AppContext = struct {
     prev_input_state: wnd.InputState,
@@ -303,6 +304,18 @@ pub fn main() !void {
                 }
             }
         }
+
+        // Check if lines were updated by the HTTP server
+        if (server_app_ctx.lines_updated_signal.load(.Acquire)) {
+            std.debug.print("Main thread: Detected lines_updated_signal.\n", .{});
+            server_app_ctx.lines_mutex.lock();
+            std.debug.print("Main thread: Mutex acquired. Uploading {d} line vertices.\n", .{rendered_lines.vulkan_vertices.items.len});
+            try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
+            server_app_ctx.lines_mutex.unlock();
+            server_app_ctx.lines_updated_signal.store(false, .Release); // Reset the signal
+            std.debug.print("Main thread: Renderer updated with new lines. Signal reset.\n", .{});
+        }
+
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
             app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
@@ -331,6 +344,24 @@ pub fn main() !void {
 
     std.debug.print("exiting main\n", .{});
 }
+
+// Server Thread
+fn runHttpServer(server_app_ctx: *HttpServer.ServerAppContext) void {
+    // Each thread should have its own general purpose allocator if it makes allocations.
+    // Or, ensure the allocator passed to startServer is thread-safe or used appropriately.
+    var thread_gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = thread_gpa.deinit();
+    const thread_allocator = thread_gpa.allocator();
+
+    std.debug.print("Starting HTTP server on a new thread...\n", .{});
+    HttpServer.startServer(thread_allocator, server_app_ctx) catch |err| {
+        std.debug.print("Failed to start HTTP server: {any}\n", .{err});
+    };
+    std.debug.print("HTTP server thread finished.\n", .{});
+}
+
+// The main function above this comment (starting with "pub fn main() !void { var gpa = ...") is the correct one.
+// The duplicate main function that was below this comment has been removed.
 
 pub const RenderedLines = struct {
     // TODO: maybe make this an ArrayList(vkr.Line, void) to dedupe
