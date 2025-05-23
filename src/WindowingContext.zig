@@ -1,4 +1,4 @@
-const wl = @import("WaylandClient.zig");
+const wl = @import("WaylandContext.zig");
 const x11 = @import("X11Context.zig");
 
 pub const WindowingType = enum {

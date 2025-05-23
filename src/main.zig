@@ -1,10 +1,12 @@
 const std = @import("std");
-const wl = @import("WaylandClient.zig");
+const wl = @import("WaylandContext.zig");
 const vkr = @import("VulkanRenderer.zig");
 const wnd = @import("WindowingContext.zig");
 const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
+const RenderedLines = @import("RenderedLines.zig").RenderedLines;
+const geom = @import("Geometry.zig");
 
 const AppContext = struct {
     prev_input_state: wnd.InputState,
@@ -218,79 +220,53 @@ pub fn main() !void {
 
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
-
-    var rendered_vertices = RenderedVertices.init();
-    defer rendered_vertices.deinit(allocator);
-
-    var rendered_faces = RenderedFaces.init();
-    defer rendered_faces.deinit(allocator);
-
-    const quad_points = [_]Point{
-        .{ .x = -2, .y = -2, .z = 0 },
-        .{ .x =  2, .y = -2, .z = 0 },
-        .{ .x =  2, .y =  2, .z = 0 },
-        .{ .x = -2, .y =  2, .z = 0 },
-    };
-    try rendered_faces.addFace(allocator, &quad_points, .{ 0.8, 0.8, 0.2 }); // Yellow color
-
-    const triangle_points = [_]Point{
-        .{ .x = -4, .y = -2, .z = -1 },
-        .{ .x = -2, .y = -2, .z = -1 },
-        .{ .x = -3, .y =  0, .z = -1 },
-    };
-    try rendered_faces.addFace(allocator, &triangle_points, .{0.2, 0.8, 0.8}); // Some other color
-
-    try rendered_vertices.addVertex(allocator, .{ -5, -5, 1 }, .{ 0.0, 1.0, 0.0 }); // Green
-    try rendered_vertices.addVertex(allocator, .{  5, -5, 1 }, .{ 0.0, 1.0, 1.0 }); // Cyan
-    try rendered_vertices.addVertex(allocator, .{  0,  5, 1 }, .{ 1.0, 0.0, 1.0 }); // Magenta
-
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
         .{ .x = 5, .y = -5, .z = -5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = -5, .z = -5 },
         .{ .x = 5, .y = 5, .z = -5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = 5, .z = -5 },
         .{ .x = -5, .y = 5, .z = -5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = 5, .z = -5 },
         .{ .x = -5, .y = -5, .z = -5 },
     ));
 
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = -5, .z = 5 },
         .{ .x = 5, .y = -5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = -5, .z = 5 },
         .{ .x = 5, .y = 5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = 5, .z = 5 },
         .{ .x = -5, .y = 5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = 5, .z = 5 },
         .{ .x = -5, .y = -5, .z = 5 },
     ));
 
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
         .{ .x = -5, .y = -5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = -5, .z = -5 },
         .{ .x = 5, .y = -5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = 5, .y = 5, .z = -5 },
         .{ .x = 5, .y = 5, .z = 5 },
     ));
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = 5, .z = -5 },
         .{ .x = -5, .y = 5, .z = 5 },
     ));
@@ -358,166 +334,6 @@ pub fn main() !void {
 
     std.debug.print("exiting main\n", .{});
 }
-
-pub const RenderedLines = struct {
-    // TODO: maybe make this an ArrayList(vkr.Line, void) to dedupe
-    vulkan_vertices: std.ArrayListUnmanaged(vkr.Line),
-    vulkan_indices: std.ArrayListUnmanaged(u32),
-    next_uid: u64,
-
-    pub fn init() RenderedLines {
-        return RenderedLines{
-            .vulkan_vertices = .{},
-            .vulkan_indices = .{},
-            .next_uid = 0,
-        };
-    }
-
-    pub fn deinit(self: *RenderedLines, allocator: std.mem.Allocator) void {
-        self.vulkan_vertices.deinit(allocator);
-        self.vulkan_indices.deinit(allocator);
-    }
-
-    pub fn addLine(self: *RenderedLines, allocator: std.mem.Allocator, line: Line) !void {
-        const left = [3]f32{
-            @floatFromInt(line.p0.x),
-            @floatFromInt(line.p0.y),
-            @floatFromInt(line.p0.z),
-        };
-        const right = [3]f32{
-            @floatFromInt(line.p1.x),
-            @floatFromInt(line.p1.y),
-            @floatFromInt(line.p1.z),
-        };
-        const color = [3]f32{ 0, 0, 0 };
-
-        // we need to know how many vertices we have before we add any
-        const n: u32 = @intCast(self.vulkan_vertices.items.len);
-
-        // The line will consist of two triangles. First, define the four
-        // corners
-        const uid_lower: u32 = @truncate(self.next_uid);
-        const uid_upper: u32 = @truncate(self.next_uid >> 32);
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = true,
-            .up = false,
-            .edge = false,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = false,
-            .up = true,
-            .edge = false,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = true,
-            .up = true,
-            .edge = false,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = false,
-            .up = false,
-            .edge = false,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-
-        // These "edge" vertices will allow for anti-aliasing
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = true,
-            .up = false,
-            .edge = true,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = false,
-            .up = true,
-            .edge = true,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = true,
-            .up = true,
-            .edge = true,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .left = false,
-            .up = false,
-            .edge = true,
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-
-        // Next, make sure we index them in the correct order
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 1);
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 3);
-        try self.vulkan_indices.append(allocator, n + 1);
-
-        // and finally the edge indices
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n + 5);
-        try self.vulkan_indices.append(allocator, n + 6);
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n + 1);
-        try self.vulkan_indices.append(allocator, n + 5);
-
-        try self.vulkan_indices.append(allocator, n + 4);
-        try self.vulkan_indices.append(allocator, n + 3);
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 4);
-        try self.vulkan_indices.append(allocator, n + 7);
-        try self.vulkan_indices.append(allocator, n + 3);
-
-        self.next_uid += 1;
-        if (self.next_uid == std.math.maxInt(u64)) {
-            return error.RanOutOfUidsForRenderedLines;
-        }
-    }
-};
 
 pub const RenderedFaces = struct {
     vulkan_vertices: std.ArrayListUnmanaged(vkr.Vertex),
@@ -898,9 +714,9 @@ test "RenderedLines UID generation" {
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
 
-    const line_data1 = Line{ .p0 = .{ .x = 0, .y = 0, .z = 0 }, .p1 = .{ .x = 1, .y = 1, .z = 1 } };
-    const line_data2 = Line{ .p0 = .{ .x = 2, .y = 2, .z = 2 }, .p1 = .{ .x = 3, .y = 3, .z = 3 } };
-    const line_data3 = Line{ .p0 = .{ .x = 4, .y = 4, .z = 4 }, .p1 = .{ .x = 5, .y = 5, .z = 5 } };
+    const line_data1 = geom.Line{ .p0 = .{ .x = 0, .y = 0, .z = 0 }, .p1 = .{ .x = 1, .y = 1, .z = 1 } };
+    const line_data2 = geom.Line{ .p0 = .{ .x = 2, .y = 2, .z = 2 }, .p1 = .{ .x = 3, .y = 3, .z = 3 } };
+    const line_data3 = geom.Line{ .p0 = .{ .x = 4, .y = 4, .z = 4 }, .p1 = .{ .x = 5, .y = 5, .z = 5 } };
 
     // First line
     try rendered_lines.addLine(allocator, line_data1);
@@ -975,21 +791,21 @@ test "RenderedFaces basic operations and triangulation" {
         .{ .x = 1, .y = 0, .z = 0 },
         .{ .x = 0, .y = 1, .z = 0 },
     };
-    const color_triangle = [_]f32{1.0, 0.0, 0.0}; // Red
+    const color_triangle = [_]f32{ 1.0, 0.0, 0.0 }; // Red
     try faces.addFace(allocator, &p_triangle, color_triangle);
 
     try std.testing.expectEqual(@as(usize, 3), faces.vulkan_vertices.items.len); // 3 vertices for a triangle
-    try std.testing.expectEqual(@as(usize, 3), faces.vulkan_indices.items.len);  // 1 triangle = 3 indices (0,1,2)
+    try std.testing.expectEqual(@as(usize, 3), faces.vulkan_indices.items.len); // 1 triangle = 3 indices (0,1,2)
     try std.testing.expectEqual(@as(u64, 1), faces.next_uid);
     // Check vertex data
-    try std.testing.expectEqualSlices(f32, &.{0.0,0.0,0.0}, &faces.vulkan_vertices.items[0].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 0.0, 0.0 }, &faces.vulkan_vertices.items[0].pos);
     try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[0].color);
-    try std.testing.expectEqualSlices(f32, &.{1.0,0.0,0.0}, &faces.vulkan_vertices.items[1].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 1.0, 0.0, 0.0 }, &faces.vulkan_vertices.items[1].pos);
     try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[1].color);
-    try std.testing.expectEqualSlices(f32, &.{0.0,1.0,0.0}, &faces.vulkan_vertices.items[2].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0, 0.0 }, &faces.vulkan_vertices.items[2].pos);
     try std.testing.expectEqualSlices(f32, &color_triangle, &faces.vulkan_vertices.items[2].color);
     // Check indices for fan triangulation (base_index = 0)
-    try std.testing.expectEqualSlices(u32, &.{0, 1, 2}, faces.vulkan_indices.items);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, faces.vulkan_indices.items);
 
     // Test adding a quad (should be triangulated into 2 triangles)
     const p_quad = [_]Point{
@@ -998,19 +814,19 @@ test "RenderedFaces basic operations and triangulation" {
         .{ .x = 1, .y = 1, .z = 1 }, // p2
         .{ .x = 0, .y = 1, .z = 1 }, // p3
     };
-    const color_quad = [_]f32{0.0, 1.0, 0.0}; // Green
+    const color_quad = [_]f32{ 0.0, 1.0, 0.0 }; // Green
     try faces.addFace(allocator, &p_quad, color_quad);
 
     try std.testing.expectEqual(@as(usize, 3 + 4), faces.vulkan_vertices.items.len); // 3 from triangle + 4 from quad
-    try std.testing.expectEqual(@as(usize, 3 + 6), faces.vulkan_indices.items.len);  // 3 from triangle + 6 from quad (2 triangles)
+    try std.testing.expectEqual(@as(usize, 3 + 6), faces.vulkan_indices.items.len); // 3 from triangle + 6 from quad (2 triangles)
     try std.testing.expectEqual(@as(u64, 2), faces.next_uid);
     // Check new quad vertex data (starts at index 3)
-    try std.testing.expectEqualSlices(f32, &.{0.0,0.0,1.0}, &faces.vulkan_vertices.items[3].pos);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 0.0, 1.0 }, &faces.vulkan_vertices.items[3].pos);
     try std.testing.expectEqualSlices(f32, &color_quad, &faces.vulkan_vertices.items[3].color);
     // Check new quad indices (base_index = 3)
     // Triangle 1: p0, p1, p2 => indices 3, 4, 5
     // Triangle 2: p0, p2, p3 => indices 3, 5, 6
-    const expected_quad_indices = [_]u32{ 3,4,5, 3,5,6 };
+    const expected_quad_indices = [_]u32{ 3, 4, 5, 3, 5, 6 };
     try std.testing.expectEqualSlices(u32, &expected_quad_indices, faces.vulkan_indices.items[3..]);
 
     // Test error for not enough points
