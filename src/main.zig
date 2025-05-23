@@ -223,7 +223,33 @@ pub fn main() !void {
 
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
-    try rendered_lines.addLine(allocator, try geom.Line.init(
+
+    var rendered_vertices = RenderedVertices.init();
+    defer rendered_vertices.deinit(allocator);
+
+    var rendered_faces = RenderedFaces.init();
+    defer rendered_faces.deinit(allocator);
+
+    const quad_points = [_]Point{
+        .{ .x = -2, .y = -2, .z = 0 },
+        .{ .x = 2, .y = -2, .z = 0 },
+        .{ .x = 2, .y = 2, .z = 0 },
+        .{ .x = -2, .y = 2, .z = 0 },
+    };
+    try rendered_faces.addFace(allocator, &quad_points, .{ 0.8, 0.8, 0.2 }); // Yellow color
+
+    const triangle_points = [_]Point{
+        .{ .x = -4, .y = -2, .z = -1 },
+        .{ .x = -2, .y = -2, .z = -1 },
+        .{ .x = -3, .y = 0, .z = -1 },
+    };
+    try rendered_faces.addFace(allocator, &triangle_points, .{ 0.2, 0.8, 0.8 }); // Some other color
+
+    try rendered_vertices.addVertex(allocator, .{ -5, -5, 1 }, .{ 0.0, 1.0, 0.0 }); // Green
+    try rendered_vertices.addVertex(allocator, .{ 5, -5, 1 }, .{ 0.0, 1.0, 1.0 }); // Cyan
+    try rendered_vertices.addVertex(allocator, .{ 0, 5, 1 }, .{ 1.0, 0.0, 1.0 }); // Magenta
+
+    try rendered_lines.addLine(allocator, try Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
         .{ .x = 5, .y = -5, .z = -5 },
     ));
