@@ -13,8 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     gnupg \
-    # Attempt to install glslc directly or via shaderc package
-    # If glslc is not found, the build might fail here, requiring a different approach for glslc
+    pkg-config \
+    libwayland-dev \
+    wayland-protocols \
+    libvulkan-dev \
+    libx11-dev \
     glslc \
     && rm -rf /var/lib/apt/lists/*
 
