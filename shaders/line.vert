@@ -17,10 +17,14 @@ layout(location = 5) in vec3 a_colorB;
 layout(location = 6) in uint up_int;
 layout(location = 7) in uint left_int;
 layout(location = 8) in uint edge_int;
+layout(location = 9) in uint a_uid_lower;
+layout(location = 10) in uint a_uid_upper;
 
 layout(location = 0) out vec4 v_color;
+layout(location = 1) out flat uvec2 v_uid;
 
 void main() {
+    v_uid = uvec2(a_uid_lower, a_uid_upper);
     bool left = left_int > 0;
     bool up = up_int > 0;
     bool edge = edge_int > 0;

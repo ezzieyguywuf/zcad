@@ -331,11 +331,13 @@ pub const RenderedLines = struct {
     // TODO: maybe make this an ArrayList(vkr.Line, void) to dedupe
     vulkan_vertices: std.ArrayListUnmanaged(vkr.Line),
     vulkan_indices: std.ArrayListUnmanaged(u32),
+    next_uid: u64,
 
     pub fn init() RenderedLines {
         return RenderedLines{
             .vulkan_vertices = .{},
             .vulkan_indices = .{},
+            .next_uid = 0,
         };
     }
 
@@ -362,6 +364,8 @@ pub const RenderedLines = struct {
 
         // The line will consist of two triangles. First, define the four
         // corners
+        const uid_lower: u32 = @truncate(self.next_uid);
+        const uid_upper: u32 = @truncate(self.next_uid >> 32);
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
             .posB = right,
@@ -370,6 +374,8 @@ pub const RenderedLines = struct {
             .edge = false,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -379,6 +385,8 @@ pub const RenderedLines = struct {
             .edge = false,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -388,6 +396,8 @@ pub const RenderedLines = struct {
             .edge = false,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -397,6 +407,8 @@ pub const RenderedLines = struct {
             .edge = false,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
 
         // These "edge" vertices will allow for anti-aliasing
@@ -408,6 +420,8 @@ pub const RenderedLines = struct {
             .edge = true,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -417,6 +431,8 @@ pub const RenderedLines = struct {
             .edge = true,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -426,6 +442,8 @@ pub const RenderedLines = struct {
             .edge = true,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_vertices.append(allocator, .{
             .posA = left,
@@ -435,6 +453,8 @@ pub const RenderedLines = struct {
             .edge = true,
             .colorA = color,
             .colorB = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
 
         // Next, make sure we index them in the correct order
@@ -459,6 +479,8 @@ pub const RenderedLines = struct {
         try self.vulkan_indices.append(allocator, n + 4);
         try self.vulkan_indices.append(allocator, n + 7);
         try self.vulkan_indices.append(allocator, n + 3);
+
+        self.next_uid += 1;
     }
 };
 

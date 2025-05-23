@@ -1841,6 +1841,18 @@ pub const Line = struct {
             .format = .r8_uint,
             .offset = @offsetOf(Line, "edge"),
         },
+        .{
+            .binding = 1,
+            .location = 9,
+            .format = .r32_uint,
+            .offset = @offsetOf(Line, "uid_lower"),
+        },
+        .{
+            .binding = 1,
+            .location = 10,
+            .format = .r32_uint,
+            .offset = @offsetOf(Line, "uid_upper"),
+        },
     };
 
     posA: [3]f32,
@@ -1850,6 +1862,15 @@ pub const Line = struct {
     up: bool,
     left: bool,
     edge: bool,
+    uid_lower: u32,
+    uid_upper: u32,
+
+    pub fn uid(self: Line) u64 {
+        var uid_val: u64 = @as(u64, self.uid_upper);
+        uid_val <<= 32;
+        uid_val |= @as(u64, self.uid_lower);
+        return uid_val;
+    }
 };
 
 fn debugCallback(
