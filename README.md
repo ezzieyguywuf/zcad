@@ -1,3 +1,5 @@
+[![Zig Tests](https://github.com/ezzieyguywuf/zcad/actions/workflows/zig_test.yml/badge.svg)](https://github.com/ezzieyguywuf/zcad/actions/workflows/zig_test.yml)
+
 Another attempt at my own Computer Aided Design (CAD) package.
 
 # status
@@ -51,6 +53,65 @@ Rotate left/right by left/right clicking
 [Screen recording 2025-02-10 11.09.21 PM.webm](https://github.com/user-attachments/assets/81e8bb22-1fbf-4c9e-852d-ebcd3d5c9f45)
 
 </details>
+
+## Development Environment with Docker
+
+Using Docker provides a consistent development environment with all necessary
+dependencies. You can either use our pre-built image from Docker Hub
+(easier) or build the image locally (not that hard).
+
+### Option 1: Use Pre-built Docker Hub Image (easier)
+
+This is the quickest way to get started.
+
+1.  **Pull the image from Docker Hub:**
+    ```bash
+    docker pull ezzieyguywuf/zcad-dev:latest
+    ```
+
+2.  **Run the Docker Container:**
+    To start an interactive session, run the following command from the root of your repository:
+    ```bash
+    docker run --rm -it -v "$(pwd):/app" -w /app ezzieyguywuf/zcad-dev:latest /bin/bash
+    ```
+    *   `--rm`: Automatically removes the container when you exit.
+    *   `-it`: Runs the container in interactive mode with a pseudo-TTY.
+    *   `-v "$(pwd):/app"`: Mounts your project's root directory into `/app` inside the container.
+    *   `-w /app`: Sets the working directory inside the container to `/app`.
+    *   `ezzieyguywuf/zcad-dev:latest`: The Docker Hub image to use.
+    *   `/bin/bash`: Starts a bash shell in the container.
+
+### Option 2: Build Docker Image Locally
+
+If you prefer to build the image yourself or want to customize it:
+
+1.  **Build the Docker Image:**
+    Navigate to the root of the repository and run:
+    ```bash
+    docker build -t zcad-dev -f docker/Dockerfile .
+    ```
+    This will build an image named `zcad-dev` (you can change this tag if you like).
+
+2.  **Run the Locally Built Docker Container:**
+    ```bash
+    docker run --rm -it -v "$(pwd):/app" -w /app zcad-dev /bin/bash
+    ```
+    (Replace `zcad-dev` if you used a different tag when building).
+
+### Develop Inside the Container
+
+Once inside the container's bash shell (using either Option 1 or Option 2):
+
+-   You'll be in the `/app` directory (your project root).
+-   **Build the project:**
+    ```bash
+    zig build
+    ```
+-   **Run unit tests:**
+    ```bash
+    zig build test
+    ```
+-   Use `git`, `glslc`, etc., as they are installed in the environment.
 
 # previous work
 
