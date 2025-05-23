@@ -294,8 +294,13 @@ pub fn main() !void {
             if (i > id_buffers.vertex_ids.items.len) {
                 std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
             } else {
-                std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
-                std.debug.print("got line_id: {d}\n", .{id_buffers.line_ids.items[i]});
+                // std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
+                const line_id = id_buffers.line_ids.items[i];
+                if (line_id == std.math.maxInt(u64)) {
+                    std.debug.print("no line clicked\n", .{});
+                } else {
+                    std.debug.print("got line_id: {d}\n", .{line_id});
+                }
             }
         }
         if (wnd_ctx.should_resize) {
@@ -481,6 +486,9 @@ pub const RenderedLines = struct {
         try self.vulkan_indices.append(allocator, n + 3);
 
         self.next_uid += 1;
+        if (self.next_uid == std.math.maxInt(u64)) {
+            return error.RanOutOfUidsForRenderedLines;
+        }
     }
 };
 

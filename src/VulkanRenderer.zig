@@ -281,8 +281,9 @@ pub const Renderer = struct {
         const color_clear = vk.ClearValue{
             .color = .{ .float_32 = .{ 0.2, 0.3, 0.3, 1 } },
         };
+        const max_u32 = std.math.maxInt(u32);
         const id_clear = vk.ClearValue{
-            .color = .{ .uint_32 = .{ 0, 0, 0, 0 } },
+            .color = .{ .uint_32 = .{ max_u32, max_u32, max_u32, max_u32 } },
         };
         const depth_clear = vk.ClearValue{
             .depth_stencil = .{
