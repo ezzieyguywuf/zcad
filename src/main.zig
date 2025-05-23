@@ -6,7 +6,17 @@ const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
 
-const AppContext = struct { prev_input_state: wnd.InputState, eye: zm.Vec, focus_point: zm.Vec, up: zm.Vec, mvp_ubo: vkr.MVPUniformBufferObject, should_exit: bool, should_fetch_id_buffers: bool, pointer_x: usize, pointer_y: usize };
+const AppContext = struct {
+    prev_input_state: wnd.InputState,
+    eye: zm.Vec,
+    focus_point: zm.Vec,
+    up: zm.Vec,
+    mvp_ubo: vkr.MVPUniformBufferObject,
+    should_exit: bool,
+    should_fetch_id_buffers: bool,
+    pointer_x: usize,
+    pointer_y: usize,
+};
 
 const OsWindow = union(wnd.WindowingType) {
     xlib: *x11.X11Context(*AppContext),
@@ -208,56 +218,56 @@ pub fn main() !void {
 
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = -5, .z = -5 },
-        .p1 = .{ .x = 5, .y = -5, .z = -5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = -5, .z = -5 },
-        .p1 = .{ .x = 5, .y = 5, .z = -5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = 5, .z = -5 },
-        .p1 = .{ .x = -5, .y = 5, .z = -5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = 5, .z = -5 },
-        .p1 = .{ .x = -5, .y = -5, .z = -5 },
-    });
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = -5, .z = -5 },
+        .{ .x = 5, .y = -5, .z = -5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = -5, .z = -5 },
+        .{ .x = 5, .y = 5, .z = -5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = 5, .z = -5 },
+        .{ .x = -5, .y = 5, .z = -5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = 5, .z = -5 },
+        .{ .x = -5, .y = -5, .z = -5 },
+    ));
 
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = -5, .z = 5 },
-        .p1 = .{ .x = 5, .y = -5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = -5, .z = 5 },
-        .p1 = .{ .x = 5, .y = 5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = 5, .z = 5 },
-        .p1 = .{ .x = -5, .y = 5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = 5, .z = 5 },
-        .p1 = .{ .x = -5, .y = -5, .z = 5 },
-    });
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = -5, .z = 5 },
+        .{ .x = 5, .y = -5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = -5, .z = 5 },
+        .{ .x = 5, .y = 5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = 5, .z = 5 },
+        .{ .x = -5, .y = 5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = 5, .z = 5 },
+        .{ .x = -5, .y = -5, .z = 5 },
+    ));
 
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = -5, .z = -5 },
-        .p1 = .{ .x = -5, .y = -5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = -5, .z = -5 },
-        .p1 = .{ .x = 5, .y = -5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = 5, .y = 5, .z = -5 },
-        .p1 = .{ .x = 5, .y = 5, .z = 5 },
-    });
-    try rendered_lines.addLine(allocator, .{
-        .p0 = .{ .x = -5, .y = 5, .z = -5 },
-        .p1 = .{ .x = -5, .y = 5, .z = 5 },
-    });
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = -5, .z = -5 },
+        .{ .x = -5, .y = -5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = -5, .z = -5 },
+        .{ .x = 5, .y = -5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = 5, .y = 5, .z = -5 },
+        .{ .x = 5, .y = 5, .z = 5 },
+    ));
+    try rendered_lines.addLine(allocator, try Line.init(
+        .{ .x = -5, .y = 5, .z = -5 },
+        .{ .x = -5, .y = 5, .z = 5 },
+    ));
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
@@ -523,6 +533,13 @@ test "Point equality" {
 const Line = struct {
     p0: Point,
     p1: Point,
+
+    pub fn init(p0: Point, p1: Point) !Line {
+        if (p0.Equals(p1)) {
+            return error.ZeroLengthLine;
+        }
+        return Line{ .p0 = p0, .p1 = p1 };
+    }
 
     // from https://mathworld.wolfram.com/Point-LineDistance3-Dimensional.html,
     // equation (8)
