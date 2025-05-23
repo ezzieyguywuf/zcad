@@ -38,41 +38,41 @@ fn parsePoint(allocator: std.mem.Allocator, point_str: []const u8) ParsePointErr
 fn handlePostLines(app_ctx: *ServerAppContext, req: *httpz.Request, res: *httpz.Response) !void {
     const query = req.query() catch |err| {
         std.debug.print("Failed to parse query string: {any}\n", .{err});
-        res.status = 400; // Bad Request
-        try res.json(.{ .error = "Failed to parse query string" }, .{});
+        res.status = httpz.Status.bad_request;
+        try res.json(.{ .error = "Failed to parse query string" }, .{ .status = res.status });
         return;
     };
 
     const p0_str = query.get("p0") orelse {
-        res.status = 400; // Bad Request
-        try res.json(.{ .error = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" }, .{});
+        res.status = httpz.Status.bad_request;
+        try res.json(.{ .error = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" }, .{ .status = res.status });
         return;
     };
 
     const p1_str = query.get("p1") orelse {
-        res.status = 400; // Bad Request
-        try res.json(.{ .error = "Missing query parameter p1 (e.g., p1=x2,y2,z2)" }, .{});
+        res.status = httpz.Status.bad_request;
+        try res.json(.{ .error = "Missing query parameter p1 (e.g., p1=x2,y2,z2)" }, .{ .status = res.status });
         return;
     };
 
     const p0 = parsePoint(app_ctx.allocator, p0_str) catch |err| {
         std.debug.print("Failed to parse p0 '{s}': {any}\n", .{ p0_str, err });
-        res.status = 400; // Bad Request
-        try res.json(.{ .error = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) }, .{});
+        res.status = httpz.Status.bad_request;
+        try res.json(.{ .error = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) }, .{ .status = res.status });
         return;
     };
 
     const p1 = parsePoint(app_ctx.allocator, p1_str) catch |err| {
         std.debug.print("Failed to parse p1 '{s}': {any}\n", .{ p1_str, err });
-        res.status = 400; // Bad Request
-        try res.json(.{ .error = "Invalid format for p1. Expected x,y,z", .details = @errorName(err) }, .{});
+        res.status = httpz.Status.bad_request;
+        try res.json(.{ .error = "Invalid format for p1. Expected x,y,z", .details = @errorName(err) }, .{ .status = res.status });
         return;
     };
 
     const new_line = main_types.Line.init(p0, p1) catch |err| {
         std.debug.print("Failed to initialize line from p0={any} to p1={any}: {any}\n", .{ p0, p1, err });
-        res.status = 400; // Bad Request - e.g., ZeroLengthLine
-        try res.json(.{ .error = "Failed to create line", .details = @errorName(err) }, .{});
+        res.status = httpz.Status.bad_request; // Bad Request - e.g., ZeroLengthLine
+        try res.json(.{ .error = "Failed to create line", .details = @errorName(err) }, .{ .status = res.status });
         return;
     };
 
@@ -81,16 +81,16 @@ fn handlePostLines(app_ctx: *ServerAppContext, req: *httpz.Request, res: *httpz.
 
     app_ctx.rendered_lines.addLine(app_ctx.allocator, new_line) catch |err| {
         std.debug.print("HTTP Server: Error adding line to RenderedLines: {any}\n", .{err});
-        res.status = 500; // Internal Server Error
-        try res.json(.{ .error = "Failed to add line to internal storage" }, .{});
+        res.status = httpz.Status.internal_server_error;
+        try res.json(.{ .error = "Failed to add line to internal storage" }, .{ .status = res.status });
         return;
     };
 
     std.debug.print("HTTP Server: Line added via HTTP: p0={any}, p1={any}. Total line objects: {d}\n", .{ p0, p1, app_ctx.rendered_lines.next_uid });
     app_ctx.lines_updated_signal.store(true, .Release);
 
-    res.status = 200;
-    try res.json(.{ .message = "Line added successfully", .p0 = p0, .p1 = p1 }, .{});
+    res.status = httpz.Status.ok;
+    try res.json(.{ .message = "Line added successfully", .p0 = p0, .p1 = p1 }, .{ .status = res.status });
 }
 
 pub fn startServer(_allocator: std.mem.Allocator, app_ctx: *ServerAppContext) !void {

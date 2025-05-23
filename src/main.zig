@@ -306,6 +306,7 @@ pub fn main() !void {
         }
 
         // Check if lines were updated by the HTTP server
+        _ = server_app_ctx; // Explicitly use server_app_ctx to check scope
         if (server_app_ctx.lines_updated_signal.load(.Acquire)) {
             std.debug.print("Main thread: Detected lines_updated_signal.\n", .{});
             server_app_ctx.lines_mutex.lock();
