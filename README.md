@@ -121,6 +121,116 @@ Once inside the container's bash shell (using either Option 1 or Option 2):
     ```
 -   Use `git`, `glslc`, etc., as they are installed in the environment.
 
+## Build
+
+### Needs zig
+
+- Required Zig version: 0.14.0
+- Download Zig from the official website: [https://ziglang.org/download/](https://ziglang.org/download/)
+  - alternatively, consider using [zig version manager](https://github.com/tristanisham/zvm)
+- Ensure that the `zig` executable is in your system's PATH.
+
+The rest of these build instructions assume you already have zig installed and
+working.
+
+```bash
+$ zig version
+0.14.0
+```
+
+### System Dependencies
+
+- General:
+  - `git`
+  - `pkg-config`
+  - `glslc`
+- Libraries:
+  - Wayland
+  - Vulkan
+  - X11
+
+  If you don't have a vulkan-enabled graphics card, I've had success using the
+  [mesa llvmpipe](https://docs.mesa3d.org/drivers/llvmpipe.html) software vulkan
+  rasterizer.
+
+### Distribution-Specific Installation
+
+Below are example commands for installing the necessary dependencies on various Linux distributions.
+
+#### Ubuntu/Debian
+
+`ca-certificates` seems to be needed by `zig build` whenever it fetches
+dependencies, I guess for security.
+
+`pkg-config` seems to be needed by zig-wayland
+
+```bash
+sudo apt-get update && sudo apt-get install -y \
+    build-essential \
+    ca-certificates \
+    pkg-config \
+    libwayland-dev \
+    wayland-protocols \
+    libvulkan-dev \
+    libx11-dev \
+    glslc
+```
+
+#### Arch Linux
+
+I didn't seem to need the `ca-certificates` package when I tested this in an
+`archlinux:latest` docker image, but your mileage may vary.
+
+`vulkan-icd-loader` is needed for the vulkan library that does the dynamic
+runtime driver stuff. 🤷
+
+`shaderc` contains the `glslc` binary
+
+```bash
+sudo pacman -Syu --needed --noconfirm \
+    pkgconf \
+    wayland \
+    wayland-protocols \
+    vulkan-headers \
+    vulkan-icd-loader \
+    libx11 \
+    shaderc
+```
+
+#### Gentoo
+
+```bash
+sudo emerge -av \
+    dev-util/pkgconf \
+    dev-libs/wayland \
+    dev-libs/wayland-protocols \
+    media-libs/vulkan-headers \
+    media-libs/vulkan-loader \
+    x11-libs/libX11 \
+    media-gfx/shaderc
+```
+Note: `glslc` is provided by the `media-gfx/shaderc` package. Ensure your system profile is appropriate (e.g., includes `make`).
+
+#### Fedora
+
+```bash
+sudo dnf install -y \
+    pkgconf-pkg-config \
+    wayland-devel \
+    wayland-protocols-devel \
+    vulkan-devel \
+    libX11-devel \
+    glslc
+```
+
+### Building the Project
+
+This project uses Zig to manage the build process. Once you have installed Zig and the necessary system dependencies, you can build the project by running the following command in the root directory of the project:
+
+```bash
+zig build
+```
+
 # previous work
 
 Previous attempts include [mycad](https://github.com/mycad-org/mycad-base)
