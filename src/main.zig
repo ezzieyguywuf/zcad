@@ -542,41 +542,71 @@ const Line = struct {
     }
 
     // from https://mathworld.wolfram.com/Point-LineDistance3-Dimensional.html,
-    // equation (8)
     // TODO: figure out overflow.
+    // TODO: This formula calculates the distance from a point to an *infinite*
+    // line defined by p0 and p1. It does not consider the line segment's endpoints.
     pub fn DistanceToPoint(self: Line, other: Point) i64 {
-        // x2 - x2 from wolfram
+        // v0 represents the vector from self.p0 to self.p1 (analogous to x2 - x1 in some formula notations)
         const v0 = Vector.FromPoint(self.p1).Minus(Vector.FromPoint(self.p0));
+        // v_p0_other represents the vector from self.p0 to the point 'other' (analogous to x0 - x1 in some formula notations)
+        const v_p0_other = Vector.FromPoint(self.p0).Minus(Vector.FromPoint(other));
 
-        // x1 - x0 from wolfram
-        const v = Vector.FromPoint(self.p0).Minus(Vector.FromPoint(other));
-
-        const numerator = v0.Cross(v).SquaredMagnitude();
+        const numerator = v0.Cross(v_p0_other).SquaredMagnitude();
         const denominator = v0.SquaredMagnitude();
 
-        // Try to avoid the sqrt if we can
-        if (numerator == denominator) {
+        // If numerator is zero, the point is on the infinite line.
+        // If denominator is zero, the line has zero length. This case should ideally be handled
+        // by the caller or an upcoming Line.init function, as distance to a point is ambiguous
+        // without more context (distance to which endpoint, or should it be an error?).
+        // For now, if denominator is 0, this will lead to division by zero if numerator is non-zero.
+        // The original tests expect DistanceToPoint(zero_length_line, point) to return distance to that single point.
+        // That logic is being removed from here. A division by zero here would be a panic.
+        if (numerator == 0) {
             return 0;
         }
 
-        // since both numerator and denominoter were squared, they should both
-        // be positive. Thus it should be safe to convert to uint and take the
-        // square root. Since they start as signed int, it should be safe to
-        // convert back to signed int.
         const tmp: u32 = @intCast(@divTrunc(numerator, denominator));
-
-        return @intCast(std.math.sqrt(tmp));
+        return @as(i64, @intFromFloat(std.math.sqrt(@as(f64, @floatFromInt(tmp)))));
     }
 };
 
 test "Distance from point to line" {
-    const l1 = Line{
-        .p0 = Point{ .x = 10, .y = 10, .z = 0 },
-        .p1 = Point{ .x = 20, .y = 10, .z = 0 },
-    };
+    const p1_start = Point{ .x = 10, .y = 10, .z = 0 };
+    const p1_end = Point{ .x = 20, .y = 10, .z = 0 };
+    const l1 = try Line.init(p1_start, p1_end);
 
+    // Original tests
     try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 15, .y = 15, .z = 0 }), 5);
     try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 15, .y = 10, .z = 0 }), 0);
+
+    // Endpoints
+    try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 10, .y = 10, .z = 0 }), 0); // p0
+    try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 20, .y = 10, .z = 0 }), 0); // p1
+
+    // Points on infinite line projection but outside segment
+    // (current formula calculates distance to infinite line, so these should be 0)
+    try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 0, .y = 10, .z = 0 }), 0);
+    try std.testing.expectEqual(l1.DistanceToPoint(Point{ .x = 30, .y = 10, .z = 0 }), 0);
+
+    // 3D points/lines
+    const p3_start = Point{ .x = 0, .y = 0, .z = 0 };
+    const p3_end = Point{ .x = 10, .y = 0, .z = 0 };
+    const l3 = try Line.init(p3_start, p3_end); // Line along X-axis
+    try std.testing.expectEqual(l3.DistanceToPoint(Point{ .x = 5, .y = 5, .z = 0 }), 5); // Point directly above mid-point
+    try std.testing.expectEqual(l3.DistanceToPoint(Point{ .x = 5, .y = 0, .z = 5 }), 5); // Point "in front" of mid-point
+}
+
+test "Line initialization" {
+    const p_a = Point{ .x = 0, .y = 0, .z = 0 };
+    const p_b = Point{ .x = 1, .y = 0, .z = 0 };
+    const line = try Line.init(p_a, p_b);
+    // Basic assertion to ensure it's created and fields are set
+    try std.testing.expect(line.p0.Equals(p_a));
+    try std.testing.expect(line.p1.Equals(p_b));
+
+    const p_c = Point{ .x = 5, .y = 5, .z = 5 };
+    const maybe_line = Line.init(p_c, p_c);
+    try std.testing.expectError(error.ZeroLengthLine, maybe_line);
 }
 
 const Vector = struct {
@@ -638,3 +668,88 @@ const Vector = struct {
         return self.dx * self.dx + self.dy * self.dy + self.dz * self.dz;
     }
 };
+
+test "Vector operations" {
+    const v1 = Vector{ .dx = 1, .dy = 2, .dz = 3 };
+    const v2 = Vector{ .dx = 1, .dy = 2, .dz = 3 };
+    const v3 = Vector{ .dx = 4, .dy = 5, .dz = 6 };
+    const v_zero = Vector{ .dx = 0, .dy = 0, .dz = 0 };
+    const vx = Vector{ .dx = 1, .dy = 0, .dz = 0 };
+    const vy = Vector{ .dx = 0, .dy = 1, .dz = 0 };
+
+    // Equals
+    try std.testing.expect(v1.Equals(v2));
+    try std.testing.expect(!v1.Equals(v3));
+
+    // Plus
+    const sum = v1.Plus(v3);
+    try std.testing.expectEqual(sum.dx, 5);
+    try std.testing.expectEqual(sum.dy, 7);
+    try std.testing.expectEqual(sum.dz, 9);
+    try std.testing.expect(v1.Plus(v_zero).Equals(v1));
+
+    // Minus
+    const diff = v3.Minus(v1);
+    try std.testing.expectEqual(diff.dx, 3);
+    try std.testing.expectEqual(diff.dy, 3);
+    try std.testing.expectEqual(diff.dz, 3);
+    try std.testing.expect(v1.Minus(v1).Equals(v_zero));
+
+    // Times
+    const scaled = v1.Times(3);
+    try std.testing.expectEqual(scaled.dx, 3);
+    try std.testing.expectEqual(scaled.dy, 6);
+    try std.testing.expectEqual(scaled.dz, 9);
+    try std.testing.expect(v1.Times(0).Equals(v_zero));
+    try std.testing.expect(v1.Times(-1).Equals(Vector{ .dx = -1, .dy = -2, .dz = -3 }));
+
+    // Dot
+    try std.testing.expectEqual(v1.Dot(v3), 1 * 4 + 2 * 5 + 3 * 6); // 32
+    try std.testing.expectEqual(vx.Dot(vy), 0); // Perpendicular
+    try std.testing.expectEqual(vx.Dot(vx), 1); // Parallel to self
+
+    // Cross
+    const cross_vx_vy = vx.Cross(vy); // Should be (0,0,1)
+    try std.testing.expect(cross_vx_vy.Equals(Vector{ .dx = 0, .dy = 0, .dz = 1 }));
+    const cross_vy_vx = vy.Cross(vx); // Should be (0,0,-1)
+    try std.testing.expect(cross_vy_vx.Equals(Vector{ .dx = 0, .dy = 0, .dz = -1 }));
+    try std.testing.expect(vx.Cross(vx).Equals(v_zero)); // Parallel
+
+    // SquaredMagnitude
+    try std.testing.expectEqual((Vector{ .dx = 3, .dy = 4, .dz = 0 }).SquaredMagnitude(), 25); // 3*3 + 4*4 = 9 + 16 = 25
+    try std.testing.expectEqual(v_zero.SquaredMagnitude(), 0);
+}
+
+test "RenderedLines UID generation" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var rendered_lines = RenderedLines.init();
+    defer rendered_lines.deinit(allocator);
+
+    const line_data1 = Line{ .p0 = .{ .x = 0, .y = 0, .z = 0 }, .p1 = .{ .x = 1, .y = 1, .z = 1 } };
+    const line_data2 = Line{ .p0 = .{ .x = 2, .y = 2, .z = 2 }, .p1 = .{ .x = 3, .y = 3, .z = 3 } };
+    const line_data3 = Line{ .p0 = .{ .x = 4, .y = 4, .z = 4 }, .p1 = .{ .x = 5, .y = 5, .z = 5 } };
+
+    // First line
+    try rendered_lines.addLine(allocator, line_data1);
+    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[0].uid());
+    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[7].uid()); // Check last vertex of the 8 generated for this line
+    try std.testing.expectEqual(@as(u64, 1), rendered_lines.next_uid);
+    try std.testing.expectEqual(@as(usize, 8), rendered_lines.vulkan_vertices.items.len); // 8 vertices per line
+
+    // Second line
+    try rendered_lines.addLine(allocator, line_data2);
+    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[8].uid()); // First vertex of second line
+    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[15].uid()); // Last vertex of second line
+    try std.testing.expectEqual(@as(u64, 2), rendered_lines.next_uid);
+    try std.testing.expectEqual(@as(usize, 16), rendered_lines.vulkan_vertices.items.len);
+
+    // Third line
+    try rendered_lines.addLine(allocator, line_data3);
+    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[16].uid()); // First vertex of third line
+    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[23].uid()); // Last vertex of third line
+    try std.testing.expectEqual(@as(u64, 3), rendered_lines.next_uid);
+    try std.testing.expectEqual(@as(usize, 24), rendered_lines.vulkan_vertices.items.len);
+}
