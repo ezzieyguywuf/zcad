@@ -334,36 +334,12 @@ pub fn main() !void {
     std.debug.print("exiting main\n", .{});
 }
 
-test "RenderedLines UID generation" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var rendered_lines = RenderedLines.init();
-    defer rendered_lines.deinit(allocator);
-
-    const line_data1 = geom.Line{ .p0 = .{ .x = 0, .y = 0, .z = 0 }, .p1 = .{ .x = 1, .y = 1, .z = 1 } };
-    const line_data2 = geom.Line{ .p0 = .{ .x = 2, .y = 2, .z = 2 }, .p1 = .{ .x = 3, .y = 3, .z = 3 } };
-    const line_data3 = geom.Line{ .p0 = .{ .x = 4, .y = 4, .z = 4 }, .p1 = .{ .x = 5, .y = 5, .z = 5 } };
-
-    // First line
-    try rendered_lines.addLine(allocator, line_data1);
-    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[0].uid());
-    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[7].uid()); // Check last vertex of the 8 generated for this line
-    try std.testing.expectEqual(@as(u64, 1), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 8), rendered_lines.vulkan_vertices.items.len); // 8 vertices per line
-
-    // Second line
-    try rendered_lines.addLine(allocator, line_data2);
-    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[8].uid()); // First vertex of second line
-    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[15].uid()); // Last vertex of second line
-    try std.testing.expectEqual(@as(u64, 2), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 16), rendered_lines.vulkan_vertices.items.len);
-
-    // Third line
-    try rendered_lines.addLine(allocator, line_data3);
-    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[16].uid()); // First vertex of third line
-    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[23].uid()); // Last vertex of third line
-    try std.testing.expectEqual(@as(u64, 3), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 24), rendered_lines.vulkan_vertices.items.len);
+test {
+    _ = @import("HttpServer.zig");
+    _ = @import("Geometry.zig");
+    _ = @import("WaylandContext.zig");
+    _ = @import("WindowingContext.zig");
+    _ = @import("VulkanRenderer.zig");
+    _ = @import("X11Context.zig");
+    _ = @import("RenderedLines.zig");
 }
