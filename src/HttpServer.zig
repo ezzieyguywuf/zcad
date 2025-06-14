@@ -153,10 +153,6 @@ test "HttpServer can shut down without crashing or leaking memory" {
 
     var server_instance = try HttpServer.init(allocator, &server_ctx);
 
-    // until https://github.com/karlseguin/http.zig/pull/136 is merged upstream,
-    // let's just sleep to avoid a lil race condition in httpz
-    std.time.sleep(10 * std.time.ns_per_ms);
-
     // Now we can shut down
     server_instance.deinit(allocator);
 
