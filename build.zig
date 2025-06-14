@@ -43,6 +43,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .filter = test_filter,
+        .test_runner = .{ .path = b.path("src/test_runner.zig"), .mode = .simple },
     });
     setupExecutable(exe_unit_tests, &dependencies);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
