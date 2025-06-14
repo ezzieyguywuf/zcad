@@ -7,6 +7,7 @@ const vk = @import("vulkan");
 const zm = @import("zmath");
 const RenderedLines = @import("RenderedLines.zig").RenderedLines;
 const geom = @import("Geometry.zig");
+const HttpServer = @import("HttpServer.zig");
 
 const AppContext = struct {
     prev_input_state: wnd.InputState,
@@ -85,7 +86,9 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var tsa = std.heap.ThreadSafeAllocator{ .child_allocator = gpa.allocator() };
+    const allocator = tsa.allocator();
+
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("Welcome to zcad debugging stream\n", .{});
 
@@ -288,6 +291,18 @@ pub fn main() !void {
     };
     defer id_buffers.deinit(allocator);
 
+    var lines_mutex = std.Thread.Mutex{};
+    var lines_updated_signal = std.atomic.Value(bool).init(false);
+    var server_app_ctx = HttpServer.ServerContext{
+        .rendered_lines = &rendered_lines,
+        .allocator = allocator,
+        .lines_mutex = &lines_mutex,
+        .lines_updated_signal = &lines_updated_signal,
+    };
+
+    var server = try HttpServer.HttpServer.init(allocator, &server_app_ctx);
+    defer server.deinit(allocator);
+
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (app_ctx.should_fetch_id_buffers) {
             app_ctx.should_fetch_id_buffers = false;
@@ -306,6 +321,20 @@ pub fn main() !void {
                 }
             }
         }
+
+        // Check if lines were updated by the HTTP server
+        if (server_app_ctx.lines_updated_signal.load(.acquire)) {
+            std.debug.print("Main thread: Detected lines_updated_signal.\n", .{});
+            server_app_ctx.lines_mutex.lock();
+            std.debug.print("Main thread: Mutex acquired. Uploading {d} line vertices.\n", .{rendered_lines.vulkan_vertices.items.len});
+            try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
+            std.debug.print("trying to unlock in main\n", .{});
+            server_app_ctx.lines_mutex.unlock();
+            std.debug.print("unlocked in main\n", .{});
+            server_app_ctx.lines_updated_signal.store(false, .release); // Reset the signal
+            std.debug.print("Main thread: Renderer updated with new lines. Signal reset.\n", .{});
+        }
+
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
             app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
