@@ -492,6 +492,9 @@ pub const Renderer = struct {
             .Triangles => &self.triangle_instanced_data,
         };
         if (instanced_data.* == null or instanced_data.*.?.n_indices != indices.len) {
+            if (instanced_data.*) |old_data| {
+                old_data.deinit(vk_ctx);
+            }
             instanced_data.* = try InstancedData.init(T, vk_ctx, vertices, indices);
         }
         try self.transferToDevice(vk_ctx, T, vertices, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
@@ -592,7 +595,7 @@ pub const Renderer = struct {
 
         command_buffer.pipelineBarrier(src_stage, dst_stage, .{}, 0, null, 0, null, barriers.len, &barriers);
 
-        try endCommand(vk_ctx, command_buffer);
+        try self.endCommand(vk_ctx, command_buffer);
     }
 
     fn beginCommand(self: *const Renderer, vk_ctx: *const VulkanContext) !VulkanContext.CommandBuffer {
@@ -602,7 +605,6 @@ pub const Renderer = struct {
             .level = .primary,
             .command_buffer_count = 1,
         }, @ptrCast(&command_buffer_handle));
-        // defer vk_ctx.device.freeCommandBuffers(self.command_pool, 1, @ptrCast(&command_buffer_handle));
 
         const command_buffer = VulkanContext.CommandBuffer.init(command_buffer_handle, vk_ctx.device.wrapper);
 
@@ -610,7 +612,7 @@ pub const Renderer = struct {
         return command_buffer;
     }
 
-    fn endCommand(vk_ctx: *const VulkanContext, command_buffer: VulkanContext.CommandBuffer) !void {
+    fn endCommand(self: *const Renderer, vk_ctx: *const VulkanContext, command_buffer: VulkanContext.CommandBuffer) !void {
         try command_buffer.endCommandBuffer();
 
         const submit_info = vk.SubmitInfo{
@@ -620,7 +622,7 @@ pub const Renderer = struct {
         };
         try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
-        // vk_ctx.device.freeCommandBuffers(self.command_pool, 1, &command_buffer);
+        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, (&command_buffer.handle)[0..1].ptr);
     }
 
     fn copyBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
@@ -635,7 +637,7 @@ pub const Renderer = struct {
         };
         command_buffer.copyBuffer(src, dst, 1, &regions);
 
-        try endCommand(vk_ctx, command_buffer);
+        try self.endCommand(vk_ctx, command_buffer);
     }
 
     fn copyImageToBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src_image: vk.Image, src_image_layout: vk.ImageLayout, dst_buffer: vk.Buffer) !void {
@@ -658,7 +660,7 @@ pub const Renderer = struct {
         };
         command_buffer.copyImageToBuffer(src_image, src_image_layout, dst_buffer, 1, &buffer_image_copy_regions);
 
-        try endCommand(vk_ctx, command_buffer);
+        try self.endCommand(vk_ctx, command_buffer);
     }
 
     pub fn render(
