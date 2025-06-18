@@ -8,6 +8,7 @@ const c = @cImport({
 const wnd = @import("WindowingContext.zig");
 
 pub const InstancedDataType = enum { Points, Lines, Triangles };
+pub const TopologyType = enum { Vertex, Line, Surface };
 
 pub const IdBuffer = std.ArrayListUnmanaged(u64);
 
@@ -20,6 +21,33 @@ pub const IdBuffers = struct {
         self.vertex_ids.deinit(allocator);
         self.line_ids.deinit(allocator);
         self.surface_ids.deinit(allocator);
+    }
+
+    pub fn id_at(self: *const IdBuffers, which: TopologyType, x: u64, y: u64, width: u64) !?u64 {
+        // Our buffers our 1-dimensional so we have to flatten the screen
+        // coordinates
+        const i = x + y * width;
+
+        const len = switch (which) {
+            .Vertex => self.vertex_ids.items.len,
+            .Line => self.line_ids.items.len,
+            .Surface => self.surface_ids.items.len,
+        };
+        if (i > len) {
+            return error.IdBufferSizeMismatchWithWindow;
+        }
+
+        const id = switch (which) {
+            .Vertex => self.vertex_ids.items[i],
+            .Line => self.line_ids.items[i],
+            .Surface => self.surface_ids.items[i],
+        };
+
+        if (id == std.math.maxInt(u64)) {
+            return null;
+        }
+
+        return id;
     }
 };
 
@@ -255,9 +283,11 @@ pub const Renderer = struct {
             .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
             .surface_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
         };
-        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
-        try id_buffers.line_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for line_ids, assuming maxInt means "no line"
-        try id_buffers.surface_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for surface_ids, "no surface"
+
+        // maxInt is used so that our indices can stay zero-based
+        try id_buffers.vertex_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity);
+        try id_buffers.line_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity);
+        try id_buffers.surface_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity);
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
         try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
@@ -1786,10 +1816,31 @@ pub const Vertex = struct {
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Vertex, "color"),
         },
+        .{
+            .binding = 0,
+            .location = 2,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_lower"),
+        },
+        .{
+            .binding = 0,
+            .location = 3,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_upper"),
+        },
     };
 
     pos: [3]f32,
     color: [3]f32,
+    uid_lower: u32,
+    uid_upper: u32,
+
+    pub fn uid(self: Line) u64 {
+        var uid_val: u64 = @as(u64, self.uid_upper);
+        uid_val <<= 32;
+        uid_val |= @as(u64, self.uid_lower);
+        return uid_val;
+    }
 
     pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });

@@ -230,7 +230,7 @@ pub fn main() !void {
     var rendered_faces = RenderedFaces.init();
     defer rendered_faces.deinit(allocator);
 
-    const quad_points = [_]Point{
+    const quad_points = [_]geom.Point{
         .{ .x = -2, .y = -2, .z = 0 },
         .{ .x = 2, .y = -2, .z = 0 },
         .{ .x = 2, .y = 2, .z = 0 },
@@ -238,7 +238,7 @@ pub fn main() !void {
     };
     try rendered_faces.addFace(allocator, &quad_points, .{ 0.8, 0.8, 0.2 }); // Yellow color
 
-    const triangle_points = [_]Point{
+    const triangle_points = [_]geom.Point{
         .{ .x = -4, .y = -2, .z = -1 },
         .{ .x = -2, .y = -2, .z = -1 },
         .{ .x = -3, .y = 0, .z = -1 },
@@ -249,7 +249,7 @@ pub fn main() !void {
     try rendered_vertices.addVertex(allocator, .{ 5, -5, 1 }, .{ 0.0, 1.0, 1.0 }); // Cyan
     try rendered_vertices.addVertex(allocator, .{ 0, 5, 1 }, .{ 1.0, 0.0, 1.0 }); // Magenta
 
-    try rendered_lines.addLine(allocator, try Line.init(
+    try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
         .{ .x = 5, .y = -5, .z = -5 },
     ));
@@ -300,7 +300,6 @@ pub fn main() !void {
         .{ .x = -5, .y = 5, .z = 5 },
     ));
 
-    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
@@ -334,17 +333,34 @@ pub fn main() !void {
             app_ctx.should_fetch_id_buffers = false;
             id_buffers.deinit(allocator);
             id_buffers = try renderer.getIdBuffers(allocator, &vk_ctx);
-            const i = app_ctx.pointer_x + app_ctx.pointer_y * @as(usize, @intCast(wnd_ctx.width));
-            if (i > id_buffers.vertex_ids.items.len) {
-                std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
-            } else {
-                // std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
-                const line_id = id_buffers.line_ids.items[i];
-                if (line_id == std.math.maxInt(u64)) {
-                    std.debug.print("no line clicked\n", .{});
-                } else {
-                    std.debug.print("got line_id: {d}\n", .{line_id});
+
+            const x = @as(u64, @intCast(app_ctx.pointer_x));
+            const y = @as(u64, @intCast(app_ctx.pointer_y));
+            const width = @as(u64, @intCast(wnd_ctx.width));
+            const vertex_id = try id_buffers.id_at(.Vertex, x, y, width);
+            const line_id = try id_buffers.id_at(.Line, x, y, width);
+            const surface_id = try id_buffers.id_at(.Surface, x, y, width);
+
+            var found = false;
+            if (vertex_id) |id| {
+                std.debug.print("Vertex clicked, id: {d}\n", .{id});
+                found = true;
+            }
+            if (!found) {
+                if (line_id) |id| {
+                    std.debug.print("Line clicked, id: {d}\n", .{id});
+                    found = true;
                 }
+            }
+            if (!found) {
+                if (surface_id) |id| {
+                    std.debug.print("Surface clicked, id: {d}\n", .{id});
+                    found = true;
+                }
+            }
+
+            if (!found) {
+                std.debug.print("Nothing clicked. vertex_id: {any}, line_id: {any}, surface_id: {any}\n", .{ vertex_id, line_id, surface_id });
             }
         }
 
@@ -424,7 +440,7 @@ pub const RenderedFaces = struct {
     pub fn addFace(
         self: *RenderedFaces,
         allocator: std.mem.Allocator,
-        points: []const Point,
+        points: []const geom.Point,
         color: [3]f32,
     ) !void {
         if (points.len < 3) {
@@ -436,17 +452,14 @@ pub const RenderedFaces = struct {
         // const current_face_uid_upper: u32 = @truncate(self.next_uid >> 32);
 
         // Add all points of the polygon as vertices
+        const uid_lower: u32 = @truncate(self.next_uid);
+        const uid_upper: u32 = @truncate(self.next_uid >> 32);
         for (points) |p| {
-            // TODO: The vkr.Vertex struct does not have UID fields.
-            // If individual vertex UIDs or face UIDs per vertex are needed for detailed picking
-            // directly in the shader via vertex attributes (like RenderedLines),
-            // vkr.Vertex would need to be extended, or a different vertex struct used.
-            // For now, we are adding vertices without specific UID attributes.
-            // The face UID is managed by RenderedFaces and could be used with the
-            // surface_ids buffer in the renderer.
             try self.vulkan_vertices.append(allocator, .{
                 .pos = .{ @floatFromInt(p.x), @floatFromInt(p.y), @floatFromInt(p.z) },
                 .color = color,
+                .uid_lower = uid_lower,
+                .uid_upper = uid_upper,
             });
         }
 
@@ -456,8 +469,8 @@ pub const RenderedFaces = struct {
         // ...
         for (1..(points.len - 1)) |i| {
             try self.vulkan_indices.append(allocator, base_vertex_index); // p0
-            try self.vulkan_indices.append(allocator, base_vertex_index + @intCast(i)); // pi
-            try self.vulkan_indices.append(allocator, base_vertex_index + @intCast(i) + 1); // p(i+1)
+            try self.vulkan_indices.append(allocator, base_vertex_index + @as(u32, @intCast(i))); // pi
+            try self.vulkan_indices.append(allocator, base_vertex_index + @as(u32, @intCast(i)) + 1); // p(i+1)
         }
 
         self.next_uid += 1;
@@ -495,9 +508,13 @@ pub const RenderedVertices = struct {
     ) !void {
         const n_vertices: u32 = @intCast(self.vulkan_vertices.items.len);
 
+        const uid_lower: u32 = @truncate(self.next_uid);
+        const uid_upper: u32 = @truncate(self.next_uid >> 32);
         try self.vulkan_vertices.append(allocator, .{
             .pos = pos,
             .color = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_indices.append(allocator, n_vertices);
 
@@ -559,7 +576,7 @@ test "RenderedFaces basic operations and triangulation" {
     try std.testing.expectEqual(@as(u64, 0), faces.next_uid);
 
     // Test adding a triangle
-    const p_triangle = [_]Point{
+    const p_triangle = [_]geom.Point{
         .{ .x = 0, .y = 0, .z = 0 },
         .{ .x = 1, .y = 0, .z = 0 },
         .{ .x = 0, .y = 1, .z = 0 },
@@ -581,7 +598,7 @@ test "RenderedFaces basic operations and triangulation" {
     try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, faces.vulkan_indices.items);
 
     // Test adding a quad (should be triangulated into 2 triangles)
-    const p_quad = [_]Point{
+    const p_quad = [_]geom.Point{
         .{ .x = 0, .y = 0, .z = 1 }, // p0
         .{ .x = 1, .y = 0, .z = 1 }, // p1
         .{ .x = 1, .y = 1, .z = 1 }, // p2
@@ -603,6 +620,6 @@ test "RenderedFaces basic operations and triangulation" {
     try std.testing.expectEqualSlices(u32, &expected_quad_indices, faces.vulkan_indices.items[3..]);
 
     // Test error for not enough points
-    const p_line = [_]Point{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = 1, .y = 0, .z = 0 } };
+    const p_line = [_]geom.Point{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = 1, .y = 0, .z = 0 } };
     try std.testing.expectError(error.NotEnoughPointsForFace, faces.addFace(allocator, &p_line, color_quad));
 }
