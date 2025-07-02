@@ -146,13 +146,15 @@ pub const Renderer = struct {
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
         errdefer vk_ctx.device.destroyCommandPool(command_pool, null);
 
-        const descriptor_pool_size = vk.DescriptorPoolSize{
-            .type = .uniform_buffer,
-            .descriptor_count = @intCast(framebuffers.len * 2),
+        const descriptor_pool_sizes = [_]vk.DescriptorPoolSize{
+            .{
+                .type = .uniform_buffer,
+                .descriptor_count = @intCast(framebuffers.len * 2),
+            },
         };
         const descriptor_pool_create_info = vk.DescriptorPoolCreateInfo{
-            .pool_size_count = 1,
-            .p_pool_sizes = &.{descriptor_pool_size},
+            .pool_size_count = descriptor_pool_sizes.len,
+            .p_pool_sizes = &descriptor_pool_sizes,
             .max_sets = @intCast(framebuffers.len),
         };
         const descriptor_pool = try vk_ctx.device.createDescriptorPool(&descriptor_pool_create_info, null);
