@@ -148,7 +148,7 @@ pub const Renderer = struct {
 
         const descriptor_pool_size = vk.DescriptorPoolSize{
             .type = .uniform_buffer,
-            .descriptor_count = @intCast(framebuffers.len),
+            .descriptor_count = @intCast(framebuffers.len * 2),
         };
         const descriptor_pool_create_info = vk.DescriptorPoolCreateInfo{
             .pool_size_count = 1,
