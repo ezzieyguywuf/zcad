@@ -18,8 +18,8 @@ pub const IdBuffers = struct {
 
     pub fn deinit(self: *IdBuffers, allocator: std.mem.Allocator) void {
         self.vertex_ids.deinit(allocator);
-        self.line_ids.deinit(allocator);
-        self.surface_ids.deinit(allocator);
+        // self.line_ids.deinit(allocator);
+        // self.surface_ids.deinit(allocator);
     }
 };
 
@@ -273,8 +273,8 @@ pub const Renderer = struct {
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
         try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, id_buffers.surface_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, id_buffers.surface_ids);
 
         return id_buffers;
     }
@@ -636,7 +636,7 @@ pub const Renderer = struct {
         };
         try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
-        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, (&command_buffer.handle)[0..1].ptr);
+        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, &.{command_buffer.handle});
     }
 
     fn copyBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {

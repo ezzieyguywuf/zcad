@@ -335,7 +335,7 @@ pub fn main() !void {
             id_buffers.deinit(allocator);
             id_buffers = try renderer.getIdBuffers(allocator, &vk_ctx);
             const i = app_ctx.pointer_x + app_ctx.pointer_y * @as(usize, @intCast(wnd_ctx.width));
-            if (i > id_buffers.vertex_ids.items.len) {
+            if (i >= id_buffers.vertex_ids.items.len) {
                 std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
             } else {
                 // std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
