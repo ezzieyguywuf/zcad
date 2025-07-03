@@ -90,8 +90,11 @@ pub const Renderer = struct {
     pub fn init(allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, width: u32, height: u32) !Renderer {
         const extent = vk.Extent2D{ .width = width, .height = height };
         var swapchain = try Swapchain.init(vk_ctx, allocator, extent);
+        errdefer swapchain.deinit(allocator, vk_ctx);
         const render_pass = try vk_ctx.createRenderPass(swapchain.surface_format.format, swapchain.depth_format);
+        errdefer vk_ctx.device.destroyRenderPass(render_pass, null);
         const framebuffers = try vk_ctx.createFramebuffers(allocator, &swapchain, render_pass);
+        errdefer allocator.free(framebuffers);
         const command_buffers = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
         errdefer allocator.free(command_buffers);
 
@@ -105,6 +108,7 @@ pub const Renderer = struct {
             .p_push_constant_ranges = undefined,
         };
         const pipeline_layout = try vk_ctx.device.createPipelineLayout(&pipeline_layout_create_info, null);
+        errdefer vk_ctx.device.destroyPipelineLayout(pipeline_layout, null);
 
         const triangle_pipeline = try vk_ctx.createPipeline(
             "vertex_shader",
@@ -114,6 +118,7 @@ pub const Renderer = struct {
             pipeline_layout,
             render_pass,
         );
+        errdefer vk_ctx.device.destroyPipeline(triangle_pipeline, null);
 
         const circle_pipeline = try vk_ctx.createPipeline(
             "circle_vertex_shader",
@@ -123,6 +128,7 @@ pub const Renderer = struct {
             pipeline_layout,
             render_pass,
         );
+        errdefer vk_ctx.device.destroyPipeline(circle_pipeline, null);
 
         const line_pipeline = try vk_ctx.createPipeline(
             "line_vertex_shader",
@@ -132,11 +138,13 @@ pub const Renderer = struct {
             pipeline_layout,
             render_pass,
         );
+        errdefer vk_ctx.device.destroyPipeline(line_pipeline, null);
 
         const command_pool_create_info = vk.CommandPoolCreateInfo{
             .queue_family_index = vk_ctx.graphics_queue_index,
         };
         const command_pool = try vk_ctx.device.createCommandPool(&command_pool_create_info, null);
+        errdefer vk_ctx.device.destroyCommandPool(command_pool, null);
 
         const descriptor_pool_size = vk.DescriptorPoolSize{
             .type = .uniform_buffer,
@@ -148,6 +156,7 @@ pub const Renderer = struct {
             .max_sets = @intCast(framebuffers.len),
         };
         const descriptor_pool = try vk_ctx.device.createDescriptorPool(&descriptor_pool_create_info, null);
+        errdefer vk_ctx.device.destroyDescriptorPool(descriptor_pool, null);
 
         const descriptor_set_layouts = try allocator.alloc(vk.DescriptorSetLayout, framebuffers.len);
         @memset(descriptor_set_layouts, descriptor_set_layout);
@@ -158,6 +167,7 @@ pub const Renderer = struct {
             .p_set_layouts = descriptor_set_layouts.ptr,
         };
         const descriptor_sets = try allocator.alloc(vk.DescriptorSet, framebuffers.len);
+        errdefer allocator.free(descriptor_sets);
         try vk_ctx.device.allocateDescriptorSets(&descriptor_set_allocate_info, descriptor_sets.ptr);
 
         var renderer = Renderer{
