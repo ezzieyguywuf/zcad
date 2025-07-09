@@ -78,6 +78,8 @@ pub fn WaylandContext(comptime T: type) type {
             self.xdg_surface.setListener(*WaylandContext(T), xdgSurfaceListener, self);
             self.wl_surface.commit();
 
+            self.wm_base.setListener(*WaylandContext(T), xdgWmBaseListener, self);
+
             if (zxdg_decoration_manager_v1 != null) {
                 const zxdg_toplevel_decoration_v1 = try zxdg_decoration_manager_v1.?.getToplevelDecoration(self.xdg_toplevel);
                 self.zxdg_toplevel_decoration_v1 = zxdg_toplevel_decoration_v1;
@@ -112,6 +114,12 @@ pub fn WaylandContext(comptime T: type) type {
             }
 
             return true;
+        }
+
+        fn xdgWmBaseListener(wm_base: *xdg.WmBase, event: xdg.WmBase.Event, _: *WaylandContext(T)) void {
+            switch (event) {
+                .ping => |ping| wm_base.pong(ping.serial),
+            }
         }
 
         fn globalRegistryListener(wl_registry: *wl.Registry, event: wl.Registry.Event, globals: *WaylandGlobals) void {
