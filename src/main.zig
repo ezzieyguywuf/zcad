@@ -224,30 +224,28 @@ pub fn main() !void {
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
 
-    var rendered_vertices = RenderedVertices.init();
-    defer rendered_vertices.deinit(allocator);
-
     var rendered_faces = RenderedFaces.init();
     defer rendered_faces.deinit(allocator);
 
-    const quad_points = [_]geom.Point{
-        .{ .x = -2, .y = -2, .z = 0 },
-        .{ .x = 2, .y = -2, .z = 0 },
-        .{ .x = 2, .y = 2, .z = 0 },
-        .{ .x = -2, .y = 2, .z = 0 },
+    // Define the 8 vertices of the cube
+    const p = [_]geom.Point{
+        .{ .x = -5, .y = -5, .z = 5 }, // 0: bottom-left-front
+        .{ .x = 5, .y = -5, .z = 5 }, // 1: bottom-right-front
+        .{ .x = 5, .y = 5, .z = 5 }, // 2: top-right-front
+        .{ .x = -5, .y = 5, .z = 5 }, // 3: top-left-front
+        .{ .x = -5, .y = -5, .z = -5 }, // 4: bottom-left-back
+        .{ .x = 5, .y = -5, .z = -5 }, // 5: bottom-right-back
+        .{ .x = 5, .y = 5, .z = -5 }, // 6: top-right-back
+        .{ .x = -5, .y = 5, .z = -5 }, // 7: top-left-back
     };
-    try rendered_faces.addFace(allocator, &quad_points, .{ 0.8, 0.8, 0.2 }); // Yellow color
 
-    const triangle_points = [_]geom.Point{
-        .{ .x = -4, .y = -2, .z = -1 },
-        .{ .x = -2, .y = -2, .z = -1 },
-        .{ .x = -3, .y = 0, .z = -1 },
-    };
-    try rendered_faces.addFace(allocator, &triangle_points, .{ 0.2, 0.8, 0.8 }); // Some other color
-
-    try rendered_vertices.addVertex(allocator, .{ -5, -5, 1 }, .{ 0.0, 1.0, 0.0 }); // Green
-    try rendered_vertices.addVertex(allocator, .{ 5, -5, 1 }, .{ 0.0, 1.0, 1.0 }); // Cyan
-    try rendered_vertices.addVertex(allocator, .{ 0, 5, 1 }, .{ 1.0, 0.0, 1.0 }); // Magenta
+    // Add the 6 faces of the cube with correct winding for front-facing
+    try rendered_faces.addFace(allocator, &.{ p[0], p[1], p[2], p[3] }, .{ 1, 0, 0 }); // Front face (red)
+    try rendered_faces.addFace(allocator, &.{ p[5], p[4], p[7], p[6] }, .{ 0, 1, 0 }); // Back face (green)
+    try rendered_faces.addFace(allocator, &.{ p[4], p[0], p[3], p[7] }, .{ 0, 0, 1 }); // Left face (blue)
+    try rendered_faces.addFace(allocator, &.{ p[1], p[5], p[6], p[2] }, .{ 1, 1, 0 }); // Right face (yellow)
+    try rendered_faces.addFace(allocator, &.{ p[3], p[2], p[6], p[7] }, .{ 1, 0, 1 }); // Top face (magenta)
+    try rendered_faces.addFace(allocator, &.{ p[4], p[5], p[1], p[0] }, .{ 0, 1, 1 }); // Bottom face (cyan)
 
     try rendered_lines.addLine(allocator, try geom.Line.init(
         .{ .x = -5, .y = -5, .z = -5 },
@@ -302,7 +300,6 @@ pub fn main() !void {
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
     try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
 
     {
