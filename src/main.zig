@@ -337,12 +337,18 @@ pub fn main() !void {
             if (i >= id_buffers.vertex_ids.items.len) {
                 std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
             } else {
-                // std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
+                const vertex_id = id_buffers.vertex_ids.items[i];
                 const line_id = id_buffers.line_ids.items[i];
-                if (line_id == std.math.maxInt(u64)) {
-                    std.debug.print("no line clicked\n", .{});
-                } else {
+                const surface_id = id_buffers.surface_ids.items[i];
+
+                if (vertex_id != std.math.maxInt(u64)) {
+                    std.debug.print("got vertex_id: {d}\n", .{vertex_id});
+                } else if (line_id != std.math.maxInt(u64)) {
                     std.debug.print("got line_id: {d}\n", .{line_id});
+                } else if (surface_id != std.math.maxInt(u64)) {
+                    std.debug.print("got surface_id: {d}\n", .{surface_id});
+                } else {
+                    std.debug.print("no item clicked\n", .{});
                 }
             }
         }
@@ -891,10 +897,14 @@ pub const RenderedVertices = struct {
         color: [3]f32,
     ) !void {
         const n_vertices: u32 = @intCast(self.vulkan_vertices.items.len);
+        const uid_lower: u32 = @truncate(self.next_uid);
+        const uid_upper: u32 = @truncate(self.next_uid >> 32);
 
         try self.vulkan_vertices.append(allocator, .{
             .pos = pos,
             .color = color,
+            .uid_lower = uid_lower,
+            .uid_upper = uid_upper,
         });
         try self.vulkan_indices.append(allocator, n_vertices);
 
@@ -942,21 +952,16 @@ pub const RenderedFaces = struct {
         }
 
         const base_vertex_index: u32 = @intCast(self.vulkan_vertices.items.len);
-        // const current_face_uid_lower: u32 = @truncate(self.next_uid);
-        // const current_face_uid_upper: u32 = @truncate(self.next_uid >> 32);
+        const current_face_uid_lower: u32 = @truncate(self.next_uid);
+        const current_face_uid_upper: u32 = @truncate(self.next_uid >> 32);
 
         // Add all points of the polygon as vertices
         for (points) |p| {
-            // TODO: The vkr.Vertex struct does not have UID fields.
-            // If individual vertex UIDs or face UIDs per vertex are needed for detailed picking
-            // directly in the shader via vertex attributes (like RenderedLines),
-            // vkr.Vertex would need to be extended, or a different vertex struct used.
-            // For now, we are adding vertices without specific UID attributes.
-            // The face UID is managed by RenderedFaces and could be used with the
-            // surface_ids buffer in the renderer.
             try self.vulkan_vertices.append(allocator, .{
                 .pos = .{ @floatFromInt(p.x), @floatFromInt(p.y), @floatFromInt(p.z) },
                 .color = color,
+                .uid_lower = current_face_uid_lower,
+                .uid_upper = current_face_uid_upper,
             });
         }
 

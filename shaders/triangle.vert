@@ -1,17 +1,21 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform MVPUniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
-} ubo;
+} mvp_ubo;
 
-layout(location = 0) in vec3 a_pos;
-layout(location = 1) in vec3 a_color;
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inColor;
+layout(location = 11) in uint inUidLower;
+layout(location = 12) in uint inUidUpper;
 
-layout(location = 0) out vec3 v_color;
+layout(location = 0) out vec3 fragColor;
+layout(location = 1) out flat uvec2 outUid;
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(a_pos, 1.0);
-    v_color = a_color;
+    gl_Position = mvp_ubo.proj * mvp_ubo.view * mvp_ubo.model * vec4(inPosition, 1.0);
+    fragColor = inColor;
+    outUid = uvec2(inUidLower, inUidUpper);
 }

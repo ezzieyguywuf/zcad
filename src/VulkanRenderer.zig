@@ -275,8 +275,8 @@ pub const Renderer = struct {
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
         try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, &id_buffers.vertex_ids);
-        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, &id_buffers.line_ids);
-        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, &id_buffers.surface_ids);
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, &id_buffers.line_ids);
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, &id_buffers.surface_ids);
     }
 
     pub fn createCommandBuffers(
@@ -1803,10 +1803,24 @@ pub const Vertex = struct {
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Vertex, "color"),
         },
+        .{
+            .binding = 0,
+            .location = 11,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_lower"),
+        },
+        .{
+            .binding = 0,
+            .location = 12,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_upper"),
+        },
     };
 
     pos: [3]f32,
     color: [3]f32,
+    uid_lower: u32,
+    uid_upper: u32,
 
     pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });
