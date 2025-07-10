@@ -18,8 +18,8 @@ pub const IdBuffers = struct {
 
     pub fn deinit(self: *IdBuffers, allocator: std.mem.Allocator) void {
         self.vertex_ids.deinit(allocator);
-        // self.line_ids.deinit(allocator);
-        // self.surface_ids.deinit(allocator);
+        self.line_ids.deinit(allocator);
+        self.surface_ids.deinit(allocator);
     }
 };
 
@@ -259,24 +259,24 @@ pub const Renderer = struct {
         allocator.free(self.framebuffers);
     }
 
-    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) !IdBuffers {
+    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, id_buffers: *IdBuffers) !void {
         const capacity = self.width * self.height;
         // std.debug.print("Initing capacity of {d}\n", .{capacity});
-        var id_buffers = IdBuffers{
-            .vertex_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-            .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-            .surface_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-        };
-        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
+        try id_buffers.vertex_ids.ensureTotalCapacity(allocator, capacity);
+        try id_buffers.line_ids.ensureTotalCapacity(allocator, capacity);
+        try id_buffers.surface_ids.ensureTotalCapacity(allocator, capacity);
+        id_buffers.vertex_ids.clearRetainingCapacity();
+        id_buffers.line_ids.clearRetainingCapacity();
+        id_buffers.surface_ids.clearRetainingCapacity();
+
+        try id_buffers.vertex_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
         try id_buffers.line_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for line_ids, assuming maxInt means "no line"
         try id_buffers.surface_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for surface_ids, "no surface"
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
-        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
-        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, id_buffers.surface_ids);
-
-        return id_buffers;
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, &id_buffers.vertex_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, &id_buffers.line_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, &id_buffers.surface_ids);
     }
 
     pub fn createCommandBuffers(
@@ -546,7 +546,7 @@ pub const Renderer = struct {
         vk_ctx: *const VulkanContext,
         comptime T: type,
         from_image: vk.Image,
-        to_data: std.ArrayListUnmanaged(T),
+        to_data: *std.ArrayListUnmanaged(T),
     ) !void {
         try self.transitionImageLayout(vk_ctx, from_image, .color_attachment_optimal, .transfer_src_optimal);
 
@@ -557,12 +557,17 @@ pub const Renderer = struct {
 
         try self.copyImageToBuffer(vk_ctx, from_image, .transfer_src_optimal, staging_buffer);
 
-        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity, .{});
-        const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
-        // std.debug.print("transfered {d} bytes from gpu\n", .{to_data.capacity});
-        @memcpy(to_data.items, casted_mapped_data);
-        // std.debug.print("to_data.len = {d}\n", .{to_data.items.len});
-        vk_ctx.device.unmapMemory(staging_memory);
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity * @sizeOf(T), .{});
+        defer vk_ctx.device.unmapMemory(staging_memory);
+        const casted_mapped_data: [*]const T = @ptrCast(@alignCast(mapped_data));
+        const mapped_slice = casted_mapped_data[0..to_data.capacity];
+
+        for (mapped_slice, 0..) |item, i| {
+            if (i >= to_data.items.len) {
+                break;
+            }
+            to_data.items[i] = item;
+        }
     }
 
     fn transitionImageLayout(
