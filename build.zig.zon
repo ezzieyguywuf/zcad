@@ -1,0 +1,37 @@
+.{
+    .name = .zcad,
+    .fingerprint = 0x596e153ab7cba341,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.14.0",
+
+    .dependencies = .{
+        .zig_wayland = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.3.0.tar.gz",
+            .hash = "1220e684662963ecf1891cd02451d0d95aa126440b6ca29db79c2514962cb6f8ef78",
+        },
+        .vulkan_zig = .{
+            .url = "https://github.com/Snektron/vulkan-zig/archive/9b4090c852760ce3210562f62ffaf301479c38ba.tar.gz",
+            .hash = "1220e1a14bee22a962a8f51bc836598b46e5fc2408c2ca54a47b3f945fcba6df6d93",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.304.tar.gz",
+            .hash = "1220e439f44d3a6ce1112d00d3002cb442f3806f8674dbbeb941398a2ec03e717c8f",
+        },
+        .zmath = .{
+            .url = "https://github.com/zig-gamedev/zmath/archive/6a0747fe6834e58793500e05953c4c6ca045d3e1.zip",
+            .hash = "1220c89074ae4a25372ae06fc61ee282326324ca9845fcb786284ec86faafaed996f",
+        },
+        .httpz = .{
+            .url = "https://github.com/karlseguin/http.zig/archive/fc207e19842c68bed4ac4c803c2d2ec815195ce6.tar.gz",
+            .hash = "httpz-0.0.0-PNVzrAq4BgCM32au5SSAVG5-5cjp3LO9I_t_1tjxyJan",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}
