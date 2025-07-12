@@ -18,8 +18,8 @@ pub const IdBuffers = struct {
 
     pub fn deinit(self: *IdBuffers, allocator: std.mem.Allocator) void {
         self.vertex_ids.deinit(allocator);
-        self.line_ids.deinit(allocator);
-        self.surface_ids.deinit(allocator);
+        // self.line_ids.deinit(allocator);
+        // self.surface_ids.deinit(allocator);
     }
 };
 
@@ -114,7 +114,7 @@ pub const Renderer = struct {
             "vertex_shader",
             "fragment_shader",
             .triangle_list,
-            true,
+            false,
             pipeline_layout,
             render_pass,
         );
@@ -259,24 +259,24 @@ pub const Renderer = struct {
         allocator.free(self.framebuffers);
     }
 
-    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext, id_buffers: *IdBuffers) !void {
+    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) !IdBuffers {
         const capacity = self.width * self.height;
         // std.debug.print("Initing capacity of {d}\n", .{capacity});
-        try id_buffers.vertex_ids.ensureTotalCapacity(allocator, capacity);
-        try id_buffers.line_ids.ensureTotalCapacity(allocator, capacity);
-        try id_buffers.surface_ids.ensureTotalCapacity(allocator, capacity);
-        id_buffers.vertex_ids.clearRetainingCapacity();
-        id_buffers.line_ids.clearRetainingCapacity();
-        id_buffers.surface_ids.clearRetainingCapacity();
-
-        try id_buffers.vertex_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
+        var id_buffers = IdBuffers{
+            .vertex_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
+            .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
+            .surface_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
+        };
+        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity); // Assuming 0 is a valid default for vertex_ids if not specified otherwise
         try id_buffers.line_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for line_ids, assuming maxInt means "no line"
         try id_buffers.surface_ids.appendNTimes(allocator, std.math.maxInt(u64), capacity); // Default for surface_ids, "no surface"
 
         const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, &id_buffers.vertex_ids);
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, &id_buffers.line_ids);
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, &id_buffers.surface_ids);
+        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
+        // try self.transferImageFromDevice(vk_ctx, u64, swap_image.surface_ids, id_buffers.surface_ids);
+
+        return id_buffers;
     }
 
     pub fn createCommandBuffers(
@@ -354,19 +354,22 @@ pub const Renderer = struct {
             const offset = [_]vk.DeviceSize{0};
             // Draw triangles
             if (self.triangle_instanced_data) |data| {
-                device.cmdSetDepthBias(command_buffer, 1.0, 0.0, 1.0);
                 device.cmdBindPipeline(command_buffer, .graphics, self.triangle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                // TODO: is there a way to _not_ bind this? it's nonsensical
+                // since the Vertex buffer doesn't match up with the
+                // BindingDescription of the Line type.
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
-                device.cmdSetDepthBias(command_buffer, 0.0, 0.0, 0.0);
             }
 
             // draw lines
             if (self.line_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.line_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 // device.cmdDraw(command_buffer, 1, 6, 0, 0);
@@ -377,6 +380,7 @@ pub const Renderer = struct {
             if (self.point_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
@@ -542,7 +546,7 @@ pub const Renderer = struct {
         vk_ctx: *const VulkanContext,
         comptime T: type,
         from_image: vk.Image,
-        to_data: *std.ArrayListUnmanaged(T),
+        to_data: std.ArrayListUnmanaged(T),
     ) !void {
         try self.transitionImageLayout(vk_ctx, from_image, .color_attachment_optimal, .transfer_src_optimal);
 
@@ -553,17 +557,12 @@ pub const Renderer = struct {
 
         try self.copyImageToBuffer(vk_ctx, from_image, .transfer_src_optimal, staging_buffer);
 
-        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity * @sizeOf(T), .{});
-        defer vk_ctx.device.unmapMemory(staging_memory);
-        const casted_mapped_data: [*]const T = @ptrCast(@alignCast(mapped_data));
-        const mapped_slice = casted_mapped_data[0..to_data.capacity];
-
-        for (mapped_slice, 0..) |item, i| {
-            if (i >= to_data.items.len) {
-                break;
-            }
-            to_data.items[i] = item;
-        }
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity, .{});
+        const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
+        // std.debug.print("transfered {d} bytes from gpu\n", .{to_data.capacity});
+        @memcpy(to_data.items, casted_mapped_data);
+        // std.debug.print("to_data.len = {d}\n", .{to_data.items.len});
+        vk_ctx.device.unmapMemory(staging_memory);
     }
 
     fn transitionImageLayout(
@@ -637,7 +636,11 @@ pub const Renderer = struct {
         };
         try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
+<<<<<<< HEAD
+        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, (&command_buffer.handle)[0..1].ptr);
+=======
         vk_ctx.device.freeCommandBuffers(self.command_pool, 1, &.{command_buffer.handle});
+>>>>>>> 5681994 (squash and split)
     }
 
     fn copyBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
@@ -1140,23 +1143,16 @@ pub const VulkanContext = struct {
             .p_name = "main",
         } };
 
-======
-        const pipeline_vertex_input_state_create_info = comptime blk: {
-            var binding_descriptions: []const vk.VertexInputBindingDescription = &.{};
-            var attribute_descriptions: []const vk.VertexInputAttributeDescription = &.{};
-            if (std.mem.eql(u8, vert_fname, "line_vertex_shader")) {
-                binding_descriptions = &.{Line.binding_description};
-                attribute_descriptions = &Line.attribute_description;
-            } else {
-                binding_descriptions = &.{Vertex.binding_description};
-                attribute_descriptions = &Vertex.attribute_description;
-            }
-            break :blk vk.PipelineVertexInputStateCreateInfo{
-                .vertex_binding_description_count = binding_descriptions.len,
-                .p_vertex_binding_descriptions = binding_descriptions.ptr,
-                .vertex_attribute_description_count = attribute_descriptions.len,
-                .p_vertex_attribute_descriptions = attribute_descriptions.ptr,
-            };
+        const binding_descriptions = [_]vk.VertexInputBindingDescription{
+            Vertex.binding_description,
+            Line.binding_description,
+        };
+        const attribute_descriptions = Vertex.attribute_description ++ Line.attribute_description;
+        const pipeline_vertex_input_state_create_info = vk.PipelineVertexInputStateCreateInfo{
+            .vertex_binding_description_count = binding_descriptions.len,
+            .p_vertex_binding_descriptions = @ptrCast(&binding_descriptions),
+            .vertex_attribute_description_count = attribute_descriptions.len,
+            .p_vertex_attribute_descriptions = &attribute_descriptions,
         };
 
         const pipeline_input_assembly_state_create_info = vk.PipelineInputAssemblyStateCreateInfo{
@@ -1221,7 +1217,7 @@ pub const VulkanContext = struct {
             .src_alpha_blend_factor = .one,
             .dst_alpha_blend_factor = .zero,
             .alpha_blend_op = .add,
-            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
+            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
         };
         const disabled_color_blend = vk.PipelineColorBlendAttachmentState{
             .blend_enable = vk.FALSE,
@@ -1806,89 +1802,74 @@ pub const Vertex = struct {
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Vertex, "color"),
         },
-        .{
-            .binding = 0,
-            .location = 11,
-            .format = .r32_uint,
-            .offset = @offsetOf(Vertex, "uid_lower"),
-        },
-        .{
-            .binding = 0,
-            .location = 12,
-            .format = .r32_uint,
-            .offset = @offsetOf(Vertex, "uid_upper"),
-        },
     };
 
     pos: [3]f32,
     color: [3]f32,
-    uid_lower: u32,
-    uid_upper: u32,
 
     pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });
     }
 };
 
-pub const LineFlags = packed struct {
-    up: bool,
-    left: bool,
-    edge: bool,
-    _padding: u29 = 0,
-};
-
-comptime {
-    if (@sizeOf(LineFlags) != 4) {
-        @compileError("LineFlags must be exactly 4 bytes (32 bits) to match the shader's u32 input.");
-    }
-}
-
 pub const Line = struct {
     const binding_description = vk.VertexInputBindingDescription{
-        .binding = 0,
+        .binding = 1,
         .stride = @sizeOf(Line),
         .input_rate = .vertex,
     };
 
     const attribute_description = [_]vk.VertexInputAttributeDescription{
         .{
-            .binding = 0,
+            .binding = 1,
             .location = 2,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posA"),
         },
         .{
-            .binding = 0,
+            .binding = 1,
             .location = 3,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posB"),
         },
         .{
-            .binding = 0,
+            .binding = 1,
             .location = 4,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "colorA"),
         },
         .{
-            .binding = 0,
+            .binding = 1,
             .location = 5,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "colorB"),
         },
         .{
-            .binding = 0,
-            .location = 8,
-            .format = .r32_uint,
-            .offset = @offsetOf(Line, "flags"),
+            .binding = 1,
+            .location = 6,
+            .format = .r8_uint,
+            .offset = @offsetOf(Line, "up"),
         },
         .{
-            .binding = 0,
+            .binding = 1,
+            .location = 7,
+            .format = .r8_uint,
+            .offset = @offsetOf(Line, "left"),
+        },
+        .{
+            .binding = 1,
+            .location = 8,
+            .format = .r8_uint,
+            .offset = @offsetOf(Line, "edge"),
+        },
+        .{
+            .binding = 1,
             .location = 9,
             .format = .r32_uint,
             .offset = @offsetOf(Line, "uid_lower"),
         },
         .{
-            .binding = 0,
+            .binding = 1,
             .location = 10,
             .format = .r32_uint,
             .offset = @offsetOf(Line, "uid_upper"),
@@ -1899,7 +1880,9 @@ pub const Line = struct {
     posB: [3]f32,
     colorA: [3]f32,
     colorB: [3]f32,
-    flags: LineFlags,
+    up: bool,
+    left: bool,
+    edge: bool,
     uid_lower: u32,
     uid_upper: u32,
 
