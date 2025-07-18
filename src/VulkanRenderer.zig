@@ -114,7 +114,7 @@ pub const Renderer = struct {
             "vertex_shader",
             "fragment_shader",
             .triangle_list,
-            false,
+            true,
             pipeline_layout,
             render_pass,
         );
@@ -354,6 +354,7 @@ pub const Renderer = struct {
             const offset = [_]vk.DeviceSize{0};
             // Draw triangles
             if (self.triangle_instanced_data) |data| {
+                device.cmdSetDepthBias(command_buffer, 1.0, 0.0, 1.0);
                 device.cmdBindPipeline(command_buffer, .graphics, self.triangle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
                 // TODO: is there a way to _not_ bind this? it's nonsensical
@@ -363,6 +364,7 @@ pub const Renderer = struct {
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
+                device.cmdSetDepthBias(command_buffer, 0.0, 0.0, 0.0);
             }
 
             // draw lines
@@ -1218,7 +1220,7 @@ pub const VulkanContext = struct {
             .src_alpha_blend_factor = .one,
             .dst_alpha_blend_factor = .zero,
             .alpha_blend_op = .add,
-            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
+            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
         };
         const disabled_color_blend = vk.PipelineColorBlendAttachmentState{
             .blend_enable = vk.FALSE,
@@ -1827,6 +1829,19 @@ pub const Vertex = struct {
     }
 };
 
+pub const LineFlags = packed struct {
+    up: bool,
+    left: bool,
+    edge: bool,
+    _padding: u29 = 0,
+};
+
+comptime {
+    if (@sizeOf(LineFlags) != 4) {
+        @compileError("LineFlags must be exactly 4 bytes (32 bits) to match the shader's u32 input.");
+    }
+}
+
 pub const Line = struct {
     const binding_description = vk.VertexInputBindingDescription{
         .binding = 1,
@@ -1861,21 +1876,9 @@ pub const Line = struct {
         },
         .{
             .binding = 1,
-            .location = 6,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "up"),
-        },
-        .{
-            .binding = 1,
-            .location = 7,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "left"),
-        },
-        .{
-            .binding = 1,
             .location = 8,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "edge"),
+            .format = .r32_uint,
+            .offset = @offsetOf(Line, "flags"),
         },
         .{
             .binding = 1,
@@ -1895,9 +1898,7 @@ pub const Line = struct {
     posB: [3]f32,
     colorA: [3]f32,
     colorB: [3]f32,
-    up: bool,
-    left: bool,
-    edge: bool,
+    flags: LineFlags,
     uid_lower: u32,
     uid_upper: u32,
 

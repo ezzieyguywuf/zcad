@@ -224,6 +224,9 @@ pub fn main() !void {
     var rendered_lines = RenderedLines.init();
     defer rendered_lines.deinit(allocator);
 
+    var rendered_vertices = RenderedVertices.init();
+    defer rendered_vertices.deinit(allocator);
+
     var rendered_faces = RenderedFaces.init();
     defer rendered_faces.deinit(allocator);
 
@@ -239,6 +242,11 @@ pub fn main() !void {
         .{ .x = -5, .y = 5, .z = -5 }, // 7: top-left-back
     };
 
+    // Add the 8 vertices of the cube
+    for (p) |vertex_pos| {
+        try rendered_vertices.addVertex(allocator, .{ @floatFromInt(vertex_pos.x), @floatFromInt(vertex_pos.y), @floatFromInt(vertex_pos.z) }, .{ 1.0, 1.0, 1.0 }); // White
+    }
+
     // Add the 6 faces of the cube with correct winding for front-facing
     try rendered_faces.addFace(allocator, &.{ p[0], p[1], p[2], p[3] }, .{ 1, 0, 0 }); // Front face (red)
     try rendered_faces.addFace(allocator, &.{ p[5], p[4], p[7], p[6] }, .{ 0, 1, 0 }); // Back face (green)
@@ -247,60 +255,27 @@ pub fn main() !void {
     try rendered_faces.addFace(allocator, &.{ p[3], p[2], p[6], p[7] }, .{ 1, 0, 1 }); // Top face (magenta)
     try rendered_faces.addFace(allocator, &.{ p[4], p[5], p[1], p[0] }, .{ 0, 1, 1 }); // Bottom face (cyan)
 
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = -5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = 5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = 5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = -5, .z = -5 },
-    ));
-
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = 5 },
-        .{ .x = 5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = 5 },
-        .{ .x = 5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = 5 },
-        .{ .x = -5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = 5 },
-        .{ .x = -5, .y = -5, .z = 5 },
-    ));
-
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = -5 },
-        .{ .x = -5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = -5 },
-        .{ .x = 5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = 5, .z = 5 },
-    ));
+    // Add the 12 lines of the cube
+    // Connecting lines
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[4]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[5]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[6]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[7]));
+    // Front face
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[1]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[2]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[3]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[0]));
+    // Back face
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[4], p[5]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[5], p[6]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[6], p[7]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[7], p[4]));
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
+    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
+    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
