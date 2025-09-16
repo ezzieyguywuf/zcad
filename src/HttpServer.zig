@@ -132,7 +132,7 @@ fn handlePostLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.
     res.status = 200;
     try res.json(.{ .message = "Line added successfully", .p0 = p0, .p1 = p1 }, .{});
     // trailing newline in response makes e.g. command-line interactions nicer.
-    try res.directWriter().writeByte('\n');
+    try res.writer().writeByte('\n');
 }
 
 test "HttpServer can shut down without crashing or leaking memory" {

@@ -409,7 +409,7 @@ pub const Renderer = struct {
                 1,
                 .{ .uniform_buffer_bit = true },
             );
-            const mvp_host_data = try vk_ctx.device.mapMemory(self.mvp_uniform_buffer_memories[i], 0, 1, .{});
+            const mvp_host_data = try vk_ctx.device.mapMemory(self.mvp_uniform_buffer_memories[i], 0, vk.WHOLE_SIZE, .{});
             // gpu_data
             self.mvp_uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(mvp_host_data));
             try vk_ctx.device.bindBufferMemory(
@@ -423,7 +423,7 @@ pub const Renderer = struct {
                 1,
                 .{ .uniform_buffer_bit = true },
             );
-            const line_host_data = try vk_ctx.device.mapMemory(self.line_uniform_buffer_memories[i], 0, 1, .{});
+            const line_host_data = try vk_ctx.device.mapMemory(self.line_uniform_buffer_memories[i], 0, vk.WHOLE_SIZE, .{});
             // gpu_data
             self.line_uniform_buffer_mapped_memories[i] = @ptrCast(@alignCast(line_host_data));
             try vk_ctx.device.bindBufferMemory(
@@ -526,7 +526,7 @@ pub const Renderer = struct {
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
         defer vk_ctx.device.freeMemory(staging_memory, null);
 
-        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, from_data.len, .{});
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, vk.WHOLE_SIZE, .{});
         const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
         @memcpy(casted_mapped_data, from_data[0..]);
         vk_ctx.device.unmapMemory(staging_memory);
@@ -553,7 +553,7 @@ pub const Renderer = struct {
 
         try self.copyImageToBuffer(vk_ctx, from_image, .transfer_src_optimal, staging_buffer);
 
-        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, to_data.capacity, .{});
+        const mapped_data = try vk_ctx.device.mapMemory(staging_memory, 0, vk.WHOLE_SIZE, .{});
         const casted_mapped_data: [*]T = @ptrCast(@alignCast(mapped_data));
         // std.debug.print("transfered {d} bytes from gpu\n", .{to_data.capacity});
         @memcpy(to_data.items, casted_mapped_data);
@@ -860,7 +860,7 @@ pub const VulkanContext = struct {
             vk.extensions.khr_swapchain.name,
         };
         const required_device_features = vk.PhysicalDeviceFeatures{
-            .independent_blend = vk.TRUE,
+            .independent_blend = .true,
         };
         const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
         defer allocator.free(physical_devices);
@@ -901,7 +901,7 @@ pub const VulkanContext = struct {
             // get the device features
             const device_features = instance.getPhysicalDeviceFeatures(physical_device_candidate);
             inline for (@typeInfo(vk.PhysicalDeviceFeatures).@"struct".fields) |field| {
-                if (@field(required_device_features, field.name) == vk.TRUE and @field(device_features, field.name) == vk.FALSE) {
+                if (@field(required_device_features, field.name) == .true and @field(device_features, field.name) == .false) {
                     continue :outer;
                 }
             }
@@ -931,7 +931,7 @@ pub const VulkanContext = struct {
                 graphics_queue_index = @intCast(i);
             }
 
-            if (presentation_queue_index == null and try instance.getPhysicalDeviceSurfaceSupportKHR(physical_device, @intCast(i), surface) == vk.TRUE) {
+            if (presentation_queue_index == null and try instance.getPhysicalDeviceSurfaceSupportKHR(physical_device, @intCast(i), surface) == .true) {
                 std.debug.print("Found queue family with index {d} that supports presentation to our surface\n", .{i});
                 presentation_queue_index = @intCast(i);
             }
@@ -1149,7 +1149,7 @@ pub const VulkanContext = struct {
 
         const pipeline_input_assembly_state_create_info = vk.PipelineInputAssemblyStateCreateInfo{
             .topology = topology,
-            .primitive_restart_enable = vk.FALSE,
+            .primitive_restart_enable = .false,
         };
 
         const pipeline_viewport_state_create_info = vk.PipelineViewportStateCreateInfo{
@@ -1160,12 +1160,12 @@ pub const VulkanContext = struct {
         };
 
         const pipeline_rasterization_state_create_info = vk.PipelineRasterizationStateCreateInfo{
-            .depth_clamp_enable = vk.FALSE,
-            .rasterizer_discard_enable = vk.FALSE,
+            .depth_clamp_enable = .false,
+            .rasterizer_discard_enable = .false,
             .polygon_mode = .fill,
             .cull_mode = .{ .back_bit = false },
             .front_face = .clockwise,
-            .depth_bias_enable = vk.FALSE,
+            .depth_bias_enable = .false,
             .depth_bias_constant_factor = 0,
             .depth_bias_clamp = 0,
             .depth_bias_slope_factor = 0,
@@ -1174,10 +1174,10 @@ pub const VulkanContext = struct {
 
         const pipeline_multisample_state_create_info = vk.PipelineMultisampleStateCreateInfo{
             .rasterization_samples = .{ .@"1_bit" = true },
-            .sample_shading_enable = vk.FALSE,
+            .sample_shading_enable = .false,
             .min_sample_shading = 1,
-            .alpha_to_coverage_enable = vk.FALSE,
-            .alpha_to_one_enable = vk.FALSE,
+            .alpha_to_coverage_enable = .false,
+            .alpha_to_one_enable = .false,
         };
 
         const null_stencil_op_state = vk.StencilOpState{
@@ -1190,19 +1190,19 @@ pub const VulkanContext = struct {
             .reference = 0,
         };
         const pipeline_depth_stencil_state_create_info = vk.PipelineDepthStencilStateCreateInfo{
-            .depth_test_enable = vk.TRUE,
-            .depth_write_enable = vk.TRUE,
+            .depth_test_enable = .true,
+            .depth_write_enable = .true,
             .depth_compare_op = .less,
-            .depth_bounds_test_enable = vk.FALSE,
+            .depth_bounds_test_enable = .false,
             .min_depth_bounds = 0,
             .max_depth_bounds = 0,
-            .stencil_test_enable = vk.FALSE,
+            .stencil_test_enable = .false,
             .front = null_stencil_op_state,
             .back = null_stencil_op_state,
         };
 
         const pipeline_color_blend_attachment_state = vk.PipelineColorBlendAttachmentState{
-            .blend_enable = if (blend_enable) vk.TRUE else vk.FALSE,
+            .blend_enable = if (blend_enable) .true else .false,
             .src_color_blend_factor = .src_alpha,
             .dst_color_blend_factor = .one_minus_src_alpha,
             .color_blend_op = .add,
@@ -1212,7 +1212,7 @@ pub const VulkanContext = struct {
             .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
         };
         const disabled_color_blend = vk.PipelineColorBlendAttachmentState{
-            .blend_enable = vk.FALSE,
+            .blend_enable = .false,
             .src_color_blend_factor = .src_alpha,
             .dst_color_blend_factor = .one_minus_src_alpha,
             .color_blend_op = .add,
@@ -1229,7 +1229,7 @@ pub const VulkanContext = struct {
             disabled_color_blend,
         };
         const pipeline_color_blend_state_create_info = vk.PipelineColorBlendStateCreateInfo{
-            .logic_op_enable = vk.FALSE,
+            .logic_op_enable = .false,
             .logic_op = .copy,
             .attachment_count = color_blend_attachments.len,
             .p_attachments = &color_blend_attachments,
@@ -1476,7 +1476,7 @@ const Swapchain = struct {
             .pre_transform = capabilities.current_transform,
             .composite_alpha = .{ .opaque_bit_khr = true },
             .present_mode = present_mode,
-            .clipped = vk.TRUE,
+            .clipped = .true,
             .old_swapchain = old_handle,
         };
 
@@ -1759,7 +1759,7 @@ const SwapImage = struct {
     }
 
     fn waitForFence(self: SwapImage, device: *const VulkanContext.Device) !void {
-        _ = try device.waitForFences(1, @ptrCast(&self.frame_fence), vk.TRUE, std.math.maxInt(u64));
+        _ = try device.waitForFences(1, @ptrCast(&self.frame_fence), .true, std.math.maxInt(u64));
     }
 };
 
@@ -1901,5 +1901,5 @@ fn debugCallback(
     //     if (p_callback_data != null) p_callback_data.?.p_message else "no message",
     //     p_callback_data,
     // });
-    return vk.FALSE;
+    return .false;
 }

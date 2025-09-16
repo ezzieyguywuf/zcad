@@ -10,13 +10,17 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const test_filter = b.option([]const u8, "test-filter", "The test filter");
+
     const dependencies = Dependencies.init(b);
 
     const exe = b.addExecutable(.{
         .name = "zcad",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     setupExecutable(exe, &dependencies);
     b.installArtifact(exe);
@@ -37,16 +41,22 @@ pub fn build(b: *std.Build) !void {
     try addShader(allocator, b, exe, "line_vertex_shader", "shaders/line.vert");
     try addShader(allocator, b, exe, "line_fragment_shader", "shaders/line.frag");
 
-    const test_filter = b.option([]const u8, "test-filter", "Filter for test");
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .filter = test_filter,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .test_runner = .{ .path = b.path("src/test_runner.zig"), .mode = .simple },
     });
     setupExecutable(exe_unit_tests, &dependencies);
+
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    if (test_filter) |filter| {
+        run_exe_unit_tests.addArg("--test-filter");
+        run_exe_unit_tests.addArg(filter);
+    }
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
     b.installArtifact(exe_unit_tests);
@@ -80,7 +90,16 @@ const Dependencies = struct {
     httpz: *std.Build.Module,
 
     fn init(b: *std.Build) Dependencies {
-        const zmath = b.dependency("zmath", .{}).module("root");
+        const zmath_options = b.addOptions();
+        zmath_options.addOption(bool, "enable_cross_platform_determinism", false);
+
+        const zmath_dep = b.dependency("zmath", .{});
+        const zmath = b.createModule(.{
+            .root_source_file = zmath_dep.path("src/root.zig"),
+            .imports = &.{
+                .{ .name = "zmath_options", .module = zmath_options.createModule() },
+            },
+        });
         const vulkan = b.dependency("vulkan_zig", .{
             .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
         }).module("vulkan-zig");

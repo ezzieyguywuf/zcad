@@ -95,13 +95,13 @@ pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
     // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
 
     try stdout.print("Welcome to zcad.\n", .{});
 
-    try bw.flush(); // Don't forget to flush!
+    try stdout.flush(); // Don't forget to flush!
 
     const eye: zm.Vec = .{ 0, 0, 20, 1 };
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
