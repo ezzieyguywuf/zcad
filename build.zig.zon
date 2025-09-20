@@ -2,7 +2,7 @@
     .name = .zcad,
     .fingerprint = 0x596e153ab7cba341,
     .version = "0.0.0",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.1",
 
     .dependencies = .{
         .zig_wayland = .{

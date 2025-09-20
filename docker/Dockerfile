@@ -21,13 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     glslc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Zig 0.14.0
-ARG ZIG_VERSION=0.14.0
+# Install Zig 0.15.1
+ARG ZIG_VERSION=0.15.1
 ARG ZIG_TARGET_ARCH=x86_64
 ARG ZIG_TARGET_OS=linux
 RUN mkdir -p /usr/local/zig_install && \
     cd /usr/local/zig_install && \
-    wget -O zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_TARGET_OS}-${ZIG_TARGET_ARCH}-${ZIG_VERSION}.tar.xz" && \
+    wget -O zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_TARGET_ARCH}-${ZIG_TARGET_OS}-${ZIG_VERSION}.tar.xz" && \
     tar -xf zig.tar.xz --strip-components=1 && \
     mv /usr/local/zig_install /usr/local/zig && \
     ln -s /usr/local/zig/zig /usr/local/bin/zig && \

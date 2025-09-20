@@ -1,16 +1,15 @@
 name: Zig CI
-
 on:
   push:
-    branches: [ main, master ] # Adjust if your main branch has a different name
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ] # Adjust if your main branch has a different name
+    branches: [ main ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: ezzieyguywuf/zcad-dev:latest
+      image: ezzieyguywuf/zcad:0.15.1
 
     steps:
     - name: Checkout code
@@ -18,11 +17,3 @@ jobs:
 
     - name: Run tests
       run: zig build test
-      # The working directory within the container should be the
-      # repository root by default when using actions/checkout.
-      # The Docker image's WORKDIR is /app, and actions/checkout
-      # usually checks out to /github/workspace.
-      # If 'zig build test' fails due to path issues, we might need to add:
-      # working-directory: /github/workspace
-      # or ensure the Docker image's /app contains the mounted code via options if necessary.
-      # However, actions/checkout with container jobs usually handles this.
