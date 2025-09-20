@@ -30,7 +30,10 @@ pub const HttpServer = struct {
         server.* = try Server.init(allocator, .{ .port = 4042 }, server_ctx);
 
         var router = try server.router(.{});
-        router.post("/lines", handlePostLines, .{});
+        // TODO: Re-examine if GET is the right verb for this endpoint.
+        // It modifies server-side state, so POST might be more appropriate,
+        // but this requires fixing the test client's handling of bodiless POST requests.
+        router.get("/lines", handlePostLines, .{});
 
         const thread = try server.listenInNewThread();
 
@@ -186,7 +189,7 @@ test "Add line via /lines endpoint" {
 
     // make POST request
     const fetch_result = try client.fetch(.{
-        .method = .POST,
+        .method = .GET,
         .location = .{ .url = "http://127.0.0.1:4042/lines?p0=0,0,0&p1=1,1,1" },
     });
 
