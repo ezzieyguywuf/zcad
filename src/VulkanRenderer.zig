@@ -172,7 +172,7 @@ pub const Renderer = struct {
                 .frag_fname = "triangle_fragment_shader",
             },
             .triangle_list,
-            false,
+            true,
             pipeline_layout,
             render_pass,
         );
@@ -398,10 +398,6 @@ pub const Renderer = struct {
             if (self.triangle_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.triangle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
-                // TODO: is there a way to _not_ bind this? it's nonsensical
-                // since the Vertex buffer doesn't match up with the
-                // BindingDescription of the Line type.
-                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
@@ -411,7 +407,6 @@ pub const Renderer = struct {
             if (self.line_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.line_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
-                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 // device.cmdDraw(command_buffer, 1, 6, 0, 0);
@@ -422,7 +417,6 @@ pub const Renderer = struct {
             if (self.point_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
                 device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
-                device.cmdBindVertexBuffers(command_buffer, 1, 1, @ptrCast(&data.vertex_buffer), &offset);
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
@@ -678,7 +672,7 @@ pub const Renderer = struct {
         };
         try vk_ctx.device.queueSubmit(vk_ctx.graphics_queue, 1, @ptrCast(&submit_info), .null_handle);
         try vk_ctx.device.queueWaitIdle(vk_ctx.graphics_queue);
-        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, (&command_buffer.handle)[0..1].ptr);
+        vk_ctx.device.freeCommandBuffers(self.command_pool, 1, &.{command_buffer.handle});
     }
 
     fn copyBuffer(self: *const Renderer, vk_ctx: *const VulkanContext, src: vk.Buffer, dst: vk.Buffer, size: usize) !void {
@@ -1258,7 +1252,7 @@ pub const VulkanContext = struct {
             .src_alpha_blend_factor = .one,
             .dst_alpha_blend_factor = .zero,
             .alpha_blend_op = .add,
-            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = false },
+            .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
         };
         const disabled_color_blend = vk.PipelineColorBlendAttachmentState{
             .blend_enable = .false,
@@ -1843,74 +1837,89 @@ pub const Vertex = struct {
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Vertex, "color"),
         },
+        .{
+            .binding = 0,
+            .location = 11,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_lower"),
+        },
+        .{
+            .binding = 0,
+            .location = 12,
+            .format = .r32_uint,
+            .offset = @offsetOf(Vertex, "uid_upper"),
+        },
     };
 
     pos: [3]f32,
     color: [3]f32,
+    uid_lower: u32,
+    uid_upper: u32,
 
     pub fn format(self: Vertex, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("Pos: ({d:3}, {d:3}, {d:3})", .{ self.pos[0], self.pos[1], self.pos[2] });
     }
 };
 
+pub const LineFlags = packed struct {
+    up: bool,
+    left: bool,
+    edge: bool,
+    _padding: u29 = 0,
+};
+
+comptime {
+    if (@sizeOf(LineFlags) != 4) {
+        @compileError("LineFlags must be exactly 4 bytes (32 bits) to match the shader's u32 input.");
+    }
+}
+
 pub const Line = struct {
     const binding_description = vk.VertexInputBindingDescription{
-        .binding = 1,
+        .binding = 0,
         .stride = @sizeOf(Line),
         .input_rate = .vertex,
     };
 
     const attribute_description = [_]vk.VertexInputAttributeDescription{
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 2,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posA"),
         },
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 3,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "posB"),
         },
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 4,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "colorA"),
         },
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 5,
             .format = .r32g32b32_sfloat,
             .offset = @offsetOf(Line, "colorB"),
         },
         .{
-            .binding = 1,
-            .location = 6,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "up"),
-        },
-        .{
-            .binding = 1,
-            .location = 7,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "left"),
-        },
-        .{
-            .binding = 1,
+            .binding = 0,
             .location = 8,
-            .format = .r8_uint,
-            .offset = @offsetOf(Line, "edge"),
+            .format = .r32_uint,
+            .offset = @offsetOf(Line, "flags"),
         },
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 9,
             .format = .r32_uint,
             .offset = @offsetOf(Line, "uid_lower"),
         },
         .{
-            .binding = 1,
+            .binding = 0,
             .location = 10,
             .format = .r32_uint,
             .offset = @offsetOf(Line, "uid_upper"),
@@ -1921,9 +1930,7 @@ pub const Line = struct {
     posB: [3]f32,
     colorA: [3]f32,
     colorB: [3]f32,
-    up: bool,
-    left: bool,
-    edge: bool,
+    flags: LineFlags,
     uid_lower: u32,
     uid_upper: u32,
 

@@ -14,9 +14,7 @@ layout(location = 2) in vec3 a_posA;
 layout(location = 3) in vec3 a_posB;
 layout(location = 4) in vec3 a_colorA;
 layout(location = 5) in vec3 a_colorB;
-layout(location = 6) in uint up_int;
-layout(location = 7) in uint left_int;
-layout(location = 8) in uint edge_int;
+layout(location = 8) in uint a_flags;
 layout(location = 9) in uint a_uid_lower;
 layout(location = 10) in uint a_uid_upper;
 
@@ -25,9 +23,9 @@ layout(location = 1) out flat uvec2 v_uid;
 
 void main() {
     v_uid = uvec2(a_uid_lower, a_uid_upper);
-    bool left = left_int > 0;
-    bool up = up_int > 0;
-    bool edge = edge_int > 0;
+    bool up = (a_flags & 1u) != 0u;
+    bool left = (a_flags & 2u) != 0u;
+    bool edge = (a_flags & 4u) != 0u;
     // transform both ends of the line into "clip space"
     vec4 clipA = ubo.proj * ubo.view * ubo.model * vec4(a_posA, 1.0);
     vec4 clipB = ubo.proj * ubo.view * ubo.model * vec4(a_posB, 1.0);
@@ -49,24 +47,26 @@ void main() {
       offset += antialias_offset;
     }
 
-    // Dividing by "w" converts to normalized device coordinates. We also have
-    // to account for the aspect ratio
     vec2 ndcA = clipA.xy / clipA.w;
     vec2 ndcB = clipB.xy / clipB.w;
-    ndcA.x = ndcA.x * line.aspect_ratio;
-    ndcB.x = ndcB.x * line.aspect_ratio;
-    // This defines the direction from pointA to pointB
     vec2 dir = normalize(ndcB.xy - ndcA.xy);
 
-    // The normal is easy to find in 2D. We put it in a vec4 so we can apply the
-    // projection matrix to it. We'll extrude the line in this direction by half
-    // the thickness
-    vec4 normal = vec4(-dir.y, dir.x, 0, 1) * offset * ubo.proj;
+    // The normal is easy to find in 2D.
+    vec2 normal = vec2(-dir.y, dir.x);
+
+    // We need to account for the aspect ratio to avoid distortion
+    normal.x /= line.aspect_ratio;
+
+    float offset_amt = line.thickness / 2.0;
+    if (edge) {
+        v_color.a = 0;
+        offset_amt += antialias_offset;
+    }
 
     if (up) {
-      outPos.xy += normal.xy;
+        outPos.xy += normal * offset_amt;
     } else {
-      outPos.xy -= normal.xy;
+        outPos.xy -= normal * offset_amt;
     }
 
     gl_Position = outPos;
