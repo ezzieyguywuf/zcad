@@ -34,8 +34,8 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    try addShader(allocator, b, exe, "vertex_shader", "shaders/triangle.vert");
-    try addShader(allocator, b, exe, "fragment_shader", "shaders/triangle.frag");
+    try addShader(allocator, b, exe, "triangle_vertex_shader", "shaders/triangle.vert");
+    try addShader(allocator, b, exe, "triangle_fragment_shader", "shaders/triangle.frag");
     try addShader(allocator, b, exe, "circle_vertex_shader", "shaders/circle.vert");
     try addShader(allocator, b, exe, "circle_fragment_shader", "shaders/circle.frag");
     try addShader(allocator, b, exe, "line_vertex_shader", "shaders/line.vert");

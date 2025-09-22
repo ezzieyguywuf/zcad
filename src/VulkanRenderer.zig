@@ -108,6 +108,12 @@ const InstancedData = struct {
     }
 };
 
+pub const PipelineConfig = struct {
+    topo_type: TopologyType,
+    vert_fname: []const u8,
+    frag_fname: []const u8,
+};
+
 pub const Renderer = struct {
     swapchain: Swapchain,
     render_pass: vk.RenderPass,
@@ -160,8 +166,11 @@ pub const Renderer = struct {
         errdefer vk_ctx.device.destroyPipelineLayout(pipeline_layout, null);
 
         const triangle_pipeline = try vk_ctx.createPipeline(
-            "vertex_shader",
-            "fragment_shader",
+            &.{
+                .topo_type = .Face,
+                .vert_fname = "triangle_vertex_shader",
+                .frag_fname = "triangle_fragment_shader",
+            },
             .triangle_list,
             false,
             pipeline_layout,
@@ -170,8 +179,11 @@ pub const Renderer = struct {
         errdefer vk_ctx.device.destroyPipeline(triangle_pipeline, null);
 
         const circle_pipeline = try vk_ctx.createPipeline(
-            "circle_vertex_shader",
-            "circle_fragment_shader",
+            &.{
+                .topo_type = .Vertex,
+                .vert_fname = "circle_vertex_shader",
+                .frag_fname = "circle_fragment_shader",
+            },
             .point_list,
             true,
             pipeline_layout,
@@ -180,8 +192,11 @@ pub const Renderer = struct {
         errdefer vk_ctx.device.destroyPipeline(circle_pipeline, null);
 
         const line_pipeline = try vk_ctx.createPipeline(
-            "line_vertex_shader",
-            "line_fragment_shader",
+            &.{
+                .topo_type = .Line,
+                .vert_fname = "line_vertex_shader",
+                .frag_fname = "line_fragment_shader",
+            },
             .triangle_list,
             true,
             pipeline_layout,
@@ -1132,17 +1147,16 @@ pub const VulkanContext = struct {
     }
 
     // These "fname"s are embedded files - this is set up in build.zig
-    fn createPipeline(
+    inline fn createPipeline(
         self: *const VulkanContext,
-        comptime vert_fname: []const u8,
-        comptime frag_fname: []const u8,
+        pipeline_config: *const PipelineConfig,
         topology: vk.PrimitiveTopology,
         blend_enable: bool,
         layout: vk.PipelineLayout,
         render_pass: vk.RenderPass,
     ) !vk.Pipeline {
-        const vert_spv align(@alignOf(u32)) = @embedFile(vert_fname).*;
-        const frag_spv align(@alignOf(u32)) = @embedFile(frag_fname).*;
+        const vert_spv align(@alignOf(u32)) = @embedFile(pipeline_config.vert_fname).*;
+        const frag_spv align(@alignOf(u32)) = @embedFile(pipeline_config.frag_fname).*;
 
         const vert = try self.device.createShaderModule(&.{
             .code_size = vert_spv.len,
@@ -1166,16 +1180,20 @@ pub const VulkanContext = struct {
             .p_name = "main",
         } };
 
-        const binding_descriptions = [_]vk.VertexInputBindingDescription{
-            Vertex.binding_description,
-            Line.binding_description,
+        const binding_descriptions: []const vk.VertexInputBindingDescription = switch (pipeline_config.topo_type) {
+            .Line => &.{Line.binding_description},
+            .Vertex, .Face => &.{Vertex.binding_description},
         };
-        const attribute_descriptions = Vertex.attribute_description ++ Line.attribute_description;
+        const attribute_descriptions: []const vk.VertexInputAttributeDescription = switch (pipeline_config.topo_type) {
+            .Line => &Line.attribute_description,
+            .Vertex, .Face => &Vertex.attribute_description,
+        };
+
         const pipeline_vertex_input_state_create_info = vk.PipelineVertexInputStateCreateInfo{
             .vertex_binding_description_count = binding_descriptions.len,
-            .p_vertex_binding_descriptions = @ptrCast(&binding_descriptions),
+            .p_vertex_binding_descriptions = binding_descriptions.ptr,
             .vertex_attribute_description_count = attribute_descriptions.len,
-            .p_vertex_attribute_descriptions = &attribute_descriptions,
+            .p_vertex_attribute_descriptions = attribute_descriptions.ptr,
         };
 
         const pipeline_input_assembly_state_create_info = vk.PipelineInputAssemblyStateCreateInfo{
