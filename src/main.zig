@@ -283,11 +283,7 @@ pub fn main() !void {
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
     }
 
-    var id_buffers = vkr.IdBuffers{
-        .vertex_ids = .{},
-        .line_ids = .{},
-        .surface_ids = .{},
-    };
+    var id_buffers = vkr.IdBuffers.init();
     defer id_buffers.deinit(allocator);
 
     var lines_mutex = std.Thread.Mutex{};
@@ -305,18 +301,23 @@ pub fn main() !void {
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
         if (app_ctx.should_fetch_id_buffers) {
             app_ctx.should_fetch_id_buffers = false;
-            id_buffers.deinit(allocator);
-            id_buffers = try renderer.getIdBuffers(allocator, &vk_ctx);
+            try id_buffers.fill(allocator, &renderer, &vk_ctx);
             const i = app_ctx.pointer_x + app_ctx.pointer_y * @as(usize, @intCast(wnd_ctx.width));
-            if (i > id_buffers.vertex_ids.items.len) {
-                std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.items.len });
+            if (i >= id_buffers.vertex_ids.ids.items.len) {
+                std.debug.print("index {d} bigger than len {d}\n", .{ i, id_buffers.vertex_ids.ids.items.len });
             } else {
-                // std.debug.print("got vertex_id: {d}\n", .{id_buffers.vertex_ids.items[i]});
-                const line_id = id_buffers.line_ids.items[i];
-                if (line_id == std.math.maxInt(u64)) {
-                    std.debug.print("no line clicked\n", .{});
-                } else {
+                const vertex_id = id_buffers.vertex_ids.ids.items[i];
+                const line_id = id_buffers.line_ids.ids.items[i];
+                const surface_id = id_buffers.surface_ids.ids.items[i];
+
+                if (vertex_id != std.math.maxInt(u64)) {
+                    std.debug.print("got vertex_id: {d}\n", .{vertex_id});
+                } else if (line_id != std.math.maxInt(u64)) {
                     std.debug.print("got line_id: {d}\n", .{line_id});
+                } else if (surface_id != std.math.maxInt(u64)) {
+                    std.debug.print("got surface_id: {d}\n", .{surface_id});
+                } else {
+                    std.debug.print("no item clicked\n", .{});
                 }
             }
         }

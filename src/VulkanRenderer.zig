@@ -7,14 +7,63 @@ const c = @cImport({
 });
 const wnd = @import("WindowingContext.zig");
 
+pub const TopologyType = enum { Vertex, Line, Face };
 pub const InstancedDataType = enum { Points, Lines, Triangles };
 
-pub const IdBuffer = std.ArrayListUnmanaged(u64);
+pub const IdBuffer = struct {
+    ids: std.ArrayListUnmanaged(u64),
+    topo_type: TopologyType,
+
+    pub fn init(topo_type: TopologyType) IdBuffer {
+        return .{
+            .ids = .{},
+            .topo_type = topo_type,
+        };
+    }
+
+    pub fn deinit(self: *IdBuffer, allocator: std.mem.Allocator) void {
+        self.ids.deinit(allocator);
+    }
+
+    pub fn fill(self: *IdBuffer, allocator: std.mem.Allocator, renderer: *const Renderer, vk_ctx: *const VulkanContext) !void {
+        const capacity = renderer.width * renderer.height;
+
+        try self.ids.ensureTotalCapacity(allocator, capacity);
+        self.ids.clearRetainingCapacity();
+        self.ids.appendNTimesAssumeCapacity(std.math.maxInt(u64), capacity);
+
+        // TODO: should this be passed in? does that save significant cycles? is
+        // this a hot path?
+        const swap_image = renderer.swapchain.swap_images[renderer.swapchain.current_image_index];
+
+        const ids = switch (self.topo_type) {
+            .Vertex => swap_image.vertex_ids,
+            .Line => swap_image.line_ids,
+            .Face => swap_image.surface_ids,
+        };
+
+        try renderer.transferImageFromDevice(vk_ctx, u64, ids, &self.ids);
+    }
+};
 
 pub const IdBuffers = struct {
     vertex_ids: IdBuffer,
     line_ids: IdBuffer,
     surface_ids: IdBuffer,
+
+    pub fn init() IdBuffers {
+        return .{
+            .vertex_ids = IdBuffer.init(.Vertex),
+            .line_ids = IdBuffer.init(.Line),
+            .surface_ids = IdBuffer.init(.Face),
+        };
+    }
+
+    pub fn fill(self: *IdBuffers, allocator: std.mem.Allocator, renderer: *const Renderer, vk_ctx: *const VulkanContext) !void {
+        try self.vertex_ids.fill(allocator, renderer, vk_ctx);
+        try self.line_ids.fill(allocator, renderer, vk_ctx);
+        try self.surface_ids.fill(allocator, renderer, vk_ctx);
+    }
 
     pub fn deinit(self: *IdBuffers, allocator: std.mem.Allocator) void {
         self.vertex_ids.deinit(allocator);
@@ -255,24 +304,6 @@ pub const Renderer = struct {
         allocator.free(self.line_uniform_buffer_mapped_memories);
         allocator.free(self.descriptor_sets);
         allocator.free(self.framebuffers);
-    }
-
-    pub fn getIdBuffers(self: *const Renderer, allocator: std.mem.Allocator, vk_ctx: *const VulkanContext) !IdBuffers {
-        const capacity = self.width * self.height;
-        // std.debug.print("Initing capacity of {d}\n", .{capacity});
-        var id_buffers = IdBuffers{
-            .vertex_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-            .line_ids = try std.ArrayListUnmanaged(u64).initCapacity(allocator, capacity),
-            .surface_ids = .{},
-        };
-        try id_buffers.vertex_ids.appendNTimes(allocator, 0, capacity);
-        try id_buffers.line_ids.appendNTimes(allocator, 0, capacity);
-
-        const swap_image = self.swapchain.swap_images[self.swapchain.current_image_index];
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.vertex_ids, id_buffers.vertex_ids);
-        try self.transferImageFromDevice(vk_ctx, u64, swap_image.line_ids, id_buffers.line_ids);
-
-        return id_buffers;
     }
 
     pub fn createCommandBuffers(
@@ -542,7 +573,7 @@ pub const Renderer = struct {
         vk_ctx: *const VulkanContext,
         comptime T: type,
         from_image: vk.Image,
-        to_data: std.ArrayListUnmanaged(T),
+        to_data: *std.ArrayListUnmanaged(T),
     ) !void {
         try self.transitionImageLayout(vk_ctx, from_image, .color_attachment_optimal, .transfer_src_optimal);
 
