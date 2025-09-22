@@ -2,12 +2,12 @@ const std = @import("std");
 const httpz = @import("httpz");
 const vkr = @import("VulkanRenderer.zig");
 const geom = @import("Geometry.zig");
-const RenderedLines = @import("RenderedLines.zig").RenderedLines;
+const rndr = @import("Renderables.zig");
 const testing = std.testing;
 
 // Context to be passed to HTTP handlers, containing application state
 pub const ServerContext = struct {
-    rendered_lines: *RenderedLines,
+    rendered_lines: *rndr.RenderedLines,
     allocator: std.mem.Allocator, // Main application's allocator
     lines_mutex: *std.Thread.Mutex,
     lines_updated_signal: *std.atomic.Value(bool),
@@ -142,7 +142,7 @@ test "HttpServer can shut down without crashing or leaking memory" {
     var tsa = std.heap.ThreadSafeAllocator{ .child_allocator = std.testing.allocator };
     const allocator = tsa.allocator();
 
-    var rendered_lines_storage = RenderedLines.init();
+    var rendered_lines_storage = rndr.RenderedLines.init();
     defer rendered_lines_storage.deinit(allocator);
     var lines_mutex = std.Thread.Mutex{};
     var lines_updated_signal = std.atomic.Value(bool).init(false);
@@ -167,7 +167,7 @@ test "Add line via /lines endpoint" {
     var tsa = std.heap.ThreadSafeAllocator{ .child_allocator = std.testing.allocator };
     const allocator = tsa.allocator();
 
-    var rendered_lines_storage = RenderedLines.init();
+    var rendered_lines_storage = rndr.RenderedLines.init();
     defer rendered_lines_storage.deinit(allocator);
     var lines_mutex = std.Thread.Mutex{};
     var lines_updated_signal = std.atomic.Value(bool).init(false);

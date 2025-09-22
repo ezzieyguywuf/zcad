@@ -5,7 +5,7 @@ const wnd = @import("WindowingContext.zig");
 const x11 = @import("X11Context.zig");
 const vk = @import("vulkan");
 const zm = @import("zmath");
-const RenderedLines = @import("RenderedLines.zig").RenderedLines;
+const rndr = @import("Renderables.zig");
 const geom = @import("Geometry.zig");
 const HttpServer = @import("HttpServer.zig");
 
@@ -221,62 +221,61 @@ pub fn main() !void {
     // };
     // const point_indices = [_]u32{ 0, 1, 2 };
 
-    var rendered_lines = RenderedLines.init();
+    var rendered_lines = rndr.RenderedLines.init();
     defer rendered_lines.deinit(allocator);
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = -5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = 5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = 5, .z = -5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = -5, .z = -5 },
-    ));
 
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = 5 },
-        .{ .x = 5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = 5 },
-        .{ .x = 5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = 5 },
-        .{ .x = -5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = 5 },
-        .{ .x = -5, .y = -5, .z = 5 },
-    ));
+    var rendered_vertices = rndr.RenderedVertices.init();
+    defer rendered_vertices.deinit(allocator);
 
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = -5, .z = -5 },
-        .{ .x = -5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = -5, .z = -5 },
-        .{ .x = 5, .y = -5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = 5, .y = 5, .z = -5 },
-        .{ .x = 5, .y = 5, .z = 5 },
-    ));
-    try rendered_lines.addLine(allocator, try geom.Line.init(
-        .{ .x = -5, .y = 5, .z = -5 },
-        .{ .x = -5, .y = 5, .z = 5 },
-    ));
+    var rendered_faces = rndr.RenderedFaces.init();
+    defer rendered_faces.deinit(allocator);
+
+    // Define the 8 vertices of the cube
+    const p = [_]geom.Point{
+        .{ .x = -5, .y = -5, .z = 5 }, // 0: bottom-left-front
+        .{ .x = 5, .y = -5, .z = 5 }, // 1: bottom-right-front
+        .{ .x = 5, .y = 5, .z = 5 }, // 2: top-right-front
+        .{ .x = -5, .y = 5, .z = 5 }, // 3: top-left-front
+        .{ .x = -5, .y = -5, .z = -5 }, // 4: bottom-left-back
+        .{ .x = 5, .y = -5, .z = -5 }, // 5: bottom-right-back
+        .{ .x = 5, .y = 5, .z = -5 }, // 6: top-right-back
+        .{ .x = -5, .y = 5, .z = -5 }, // 7: top-left-back
+    };
+
+    // Add the 8 vertices of the cube
+    for (p) |vertex_pos| {
+        try rendered_vertices.addVertex(allocator, .{ @floatFromInt(vertex_pos.x), @floatFromInt(vertex_pos.y), @floatFromInt(vertex_pos.z) }, .{ 0.2, 0.2, 0.2 }); // Dark Gray
+    }
+
+    // Add the 6 faces of the cube with correct winding for front-facing
+    try rendered_faces.addFace(allocator, &.{ p[0], p[1], p[2], p[3] }, .{ 0.43, 0.5, 0.56 }); // Front face (Slate Gray)
+    try rendered_faces.addFace(allocator, &.{ p[5], p[4], p[7], p[6] }, .{ 0.18, 0.31, 0.31 }); // Back face (Dark Slate Gray)
+    try rendered_faces.addFace(allocator, &.{ p[4], p[0], p[3], p[7] }, .{ 0.27, 0.51, 0.7 }); // Left face (Steel Blue)
+    try rendered_faces.addFace(allocator, &.{ p[1], p[5], p[6], p[2] }, .{ 0.42, 0.56, 0.14 }); // Right face (Olive Drab)
+    try rendered_faces.addFace(allocator, &.{ p[3], p[2], p[6], p[7] }, .{ 0.74, 0.56, 0.56 }); // Top face (Rosy Brown)
+    try rendered_faces.addFace(allocator, &.{ p[4], p[5], p[1], p[0] }, .{ 0.8, 0.52, 0.25 }); // Bottom face (Peru)
+
+    // Add the 12 lines of the cube
+    // Connecting lines
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[4]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[5]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[6]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[7]));
+    // Front face
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[1]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[2]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[3]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[0]));
+    // Back face
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[4], p[5]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[5], p[6]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[6], p[7]));
+    try rendered_lines.addLine(allocator, try geom.Line.init(p[7], p[4]));
 
     // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
     try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, &vk_triangle_vertices, &triangle_indices);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
+    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
@@ -371,5 +370,5 @@ test {
     _ = @import("WindowingContext.zig");
     _ = @import("VulkanRenderer.zig");
     _ = @import("X11Context.zig");
-    _ = @import("RenderedLines.zig");
+    _ = @import("Renderables.zig");
 }
