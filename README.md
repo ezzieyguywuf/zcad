@@ -8,16 +8,19 @@ very much WIP. Currently I can render a few things (see demo).
 
 # demo
 
+Added faces and vertices as renderables - each with real mouse picking cpu-side.
+
+https://github.com/user-attachments/assets/c2c1121b-57d6-4758-b99c-785caffa031e
+
+<details>
+  <summary> old demos </summary>
+
 Real mouse picking: each line gets a UID cpu-side. These UIDs are passed along to the GPU. The GPU
 writes these UIDs to a separate buffer, one UID for each pixel. Finally, that buffer is read back
 CPU-side, and the coordinates of a click can be used to retrieve whether or not a line has been
 clicked.
 
 [Screen recording 2025-05-22 11.01.59 PM.webm](https://github.com/user-attachments/assets/1f146289-48bd-4059-b4f3-6e413bec7f28)
-
-<details>
-  <summary> old demos </summary>
-
 
 Proof-of-concept for mouse picking. Currently hard-coding "1" for each line, but this shows the data originating
 from the fragment buffer and getting transferred and used on the cpu side.
