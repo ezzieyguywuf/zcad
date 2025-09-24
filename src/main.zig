@@ -103,7 +103,7 @@ pub fn main() !void {
 
     try stdout.flush(); // Don't forget to flush!
 
-    const eye: zm.Vec = .{ 0, 0, 20, 1 };
+    const eye: zm.Vec = .{ 15, -10, 15, 1 };
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
