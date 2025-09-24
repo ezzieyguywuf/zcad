@@ -171,56 +171,6 @@ pub fn main() !void {
     var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wnd_ctx.width), @intCast(wnd_ctx.height));
     defer renderer.deinit(allocator, &vk_ctx);
 
-    // zcad
-    // const triangle_color = [_]f32{ 0.8, 0.2, 0.8 };
-    // const vk_triangle_vertices = [_]vkr.Vertex{
-    //     .{
-    //         .pos = .{ -5, -5, 0 },
-    //         .color = triangle_color,
-    //     },
-    //     .{
-    //         .pos = .{ 5, -5, 0 },
-    //         .color = triangle_color,
-    //     },
-    //     .{
-    //         .pos = .{ 5, 5, 0 },
-    //         .color = triangle_color,
-    //     },
-    //     .{
-    //         .pos = .{ -5, 5, 0 },
-    //         .color = triangle_color,
-    //     },
-    //     .{
-    //         .pos = .{ 5, 5, -10 },
-    //         .color = triangle_color,
-    //     },
-    //     .{
-    //         .pos = .{ 5, -5, -10 },
-    //         .color = triangle_color,
-    //     },
-    // };
-    // const triangle_indices = [_]u32{ 0, 1, 2, 2, 3, 0, 1, 2, 5, 2, 4, 5 };
-
-    // const vk_point_vertices = [_]vkr.Vertex{
-    //     .{
-    //         .pos = .{ -5, -5, 0 },
-    //         .color = .{ 0, 0.5, 0.5 },
-    //     },
-    //     .{
-    //         .pos = .{ 5, -5, 0 },
-    //         .color = .{ 0, 0.5, 0.5 },
-    //     },
-    //     .{
-    //         .pos = .{ 5, 5, -10 },
-    //         .color = .{ 1, 0, 0 },
-    //     },
-    //     .{
-    //         .pos = .{ 5, -5, -10 },
-    //         .color = .{ 1, 1, 0 },
-    //     },
-    // };
-    // const point_indices = [_]u32{ 0, 1, 2 };
-
     var rendered_lines = rndr.RenderedLines.init();
     defer rendered_lines.deinit(allocator);
 
@@ -229,53 +179,6 @@ pub fn main() !void {
 
     var rendered_faces = rndr.RenderedFaces.init();
     defer rendered_faces.deinit(allocator);
-
-    // Define the 8 vertices of the cube
-    const p = [_]geom.Point{
-        .{ .x = -5, .y = -5, .z = 5 }, // 0: bottom-left-front
-        .{ .x = 5, .y = -5, .z = 5 }, // 1: bottom-right-front
-        .{ .x = 5, .y = 5, .z = 5 }, // 2: top-right-front
-        .{ .x = -5, .y = 5, .z = 5 }, // 3: top-left-front
-        .{ .x = -5, .y = -5, .z = -5 }, // 4: bottom-left-back
-        .{ .x = 5, .y = -5, .z = -5 }, // 5: bottom-right-back
-        .{ .x = 5, .y = 5, .z = -5 }, // 6: top-right-back
-        .{ .x = -5, .y = 5, .z = -5 }, // 7: top-left-back
-    };
-
-    // Add the 8 vertices of the cube
-    for (p) |vertex_pos| {
-        try rendered_vertices.addVertex(allocator, .{ @floatFromInt(vertex_pos.x), @floatFromInt(vertex_pos.y), @floatFromInt(vertex_pos.z) }, .{ 0.2, 0.2, 0.2 }); // Dark Gray
-    }
-
-    // Add the 6 faces of the cube with correct winding for front-facing
-    try rendered_faces.addFace(allocator, &.{ p[0], p[1], p[2], p[3] }, .{ 0.43, 0.5, 0.56 }); // Front face (Slate Gray)
-    try rendered_faces.addFace(allocator, &.{ p[5], p[4], p[7], p[6] }, .{ 0.18, 0.31, 0.31 }); // Back face (Dark Slate Gray)
-    try rendered_faces.addFace(allocator, &.{ p[4], p[0], p[3], p[7] }, .{ 0.27, 0.51, 0.7 }); // Left face (Steel Blue)
-    try rendered_faces.addFace(allocator, &.{ p[1], p[5], p[6], p[2] }, .{ 0.42, 0.56, 0.14 }); // Right face (Olive Drab)
-    try rendered_faces.addFace(allocator, &.{ p[3], p[2], p[6], p[7] }, .{ 0.74, 0.56, 0.56 }); // Top face (Rosy Brown)
-    try rendered_faces.addFace(allocator, &.{ p[4], p[5], p[1], p[0] }, .{ 0.8, 0.52, 0.25 }); // Bottom face (Peru)
-
-    // Add the 12 lines of the cube
-    // Connecting lines
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[4]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[5]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[6]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[7]));
-    // Front face
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[0], p[1]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[1], p[2]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[2], p[3]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[3], p[0]));
-    // Back face
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[4], p[5]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[5], p[6]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[6], p[7]));
-    try rendered_lines.addLine(allocator, try geom.Line.init(p[7], p[4]));
-
-    // try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, &vk_point_vertices, &point_indices);
-    try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
-    try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
 
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
@@ -287,11 +190,21 @@ pub fn main() !void {
 
     var lines_mutex = std.Thread.Mutex{};
     var lines_updated_signal = std.atomic.Value(bool).init(false);
+    var vertices_mutex = std.Thread.Mutex{};
+    var vertices_updated_signal = std.atomic.Value(bool).init(false);
+    var faces_mutex = std.Thread.Mutex{};
+    var faces_updated_signal = std.atomic.Value(bool).init(false);
     var server_app_ctx = HttpServer.ServerContext{
         .rendered_lines = &rendered_lines,
+        .rendered_vertices = &rendered_vertices,
+        .rendered_faces = &rendered_faces,
         .allocator = allocator,
         .lines_mutex = &lines_mutex,
         .lines_updated_signal = &lines_updated_signal,
+        .vertices_mutex = &vertices_mutex,
+        .vertices_updated_signal = &vertices_updated_signal,
+        .faces_mutex = &faces_mutex,
+        .faces_updated_signal = &faces_updated_signal,
     };
 
     var server = try HttpServer.HttpServer.init(allocator, &server_app_ctx);
@@ -332,6 +245,28 @@ pub fn main() !void {
             std.debug.print("unlocked in main\n", .{});
             server_app_ctx.lines_updated_signal.store(false, .release); // Reset the signal
             std.debug.print("Main thread: Renderer updated with new lines. Signal reset.\n", .{});
+        }
+
+        // Check if vertices were updated by the HTTP server
+        if (server_app_ctx.vertices_updated_signal.load(.acquire)) {
+            std.debug.print("Main thread: Detected vertices_updated_signal.\n", .{});
+            server_app_ctx.vertices_mutex.lock();
+            std.debug.print("Main thread: Mutex acquired. Uploading {d} vertices.\n", .{rendered_vertices.vulkan_vertices.items.len});
+            try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
+            server_app_ctx.vertices_mutex.unlock();
+            server_app_ctx.vertices_updated_signal.store(false, .release); // Reset the signal
+            std.debug.print("Main thread: Renderer updated with new vertices. Signal reset.\n", .{});
+        }
+
+        // Check if faces were updated by the HTTP server
+        if (server_app_ctx.faces_updated_signal.load(.acquire)) {
+            std.debug.print("Main thread: Detected faces_updated_signal.\n", .{});
+            server_app_ctx.faces_mutex.lock();
+            std.debug.print("Main thread: Mutex acquired. Uploading {d} face vertices.\n", .{rendered_faces.vulkan_vertices.items.len});
+            try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
+            server_app_ctx.faces_mutex.unlock();
+            server_app_ctx.faces_updated_signal.store(false, .release); // Reset the signal
+            std.debug.print("Main thread: Renderer updated with new faces. Signal reset.\n", .{});
         }
 
         if (wnd_ctx.should_resize) {
