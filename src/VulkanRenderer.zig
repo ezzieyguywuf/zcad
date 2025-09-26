@@ -171,8 +171,6 @@ pub const Renderer = struct {
                 .vert_fname = "triangle_vertex_shader",
                 .frag_fname = "triangle_fragment_shader",
             },
-            .triangle_list,
-            true,
             pipeline_layout,
             render_pass,
         );
@@ -184,8 +182,6 @@ pub const Renderer = struct {
                 .vert_fname = "circle_vertex_shader",
                 .frag_fname = "circle_fragment_shader",
             },
-            .point_list,
-            true,
             pipeline_layout,
             render_pass,
         );
@@ -197,8 +193,6 @@ pub const Renderer = struct {
                 .vert_fname = "line_vertex_shader",
                 .frag_fname = "line_fragment_shader",
             },
-            .triangle_list,
-            true,
             pipeline_layout,
             render_pass,
         );
@@ -403,6 +397,15 @@ pub const Renderer = struct {
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
             }
 
+            // draw dots
+            if (self.point_instanced_data) |data| {
+                device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
+                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
+                device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
+                device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
+                device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
+            }
+
             // draw lines
             if (self.line_instanced_data) |data| {
                 device.cmdBindPipeline(command_buffer, .graphics, self.line_pipeline);
@@ -410,15 +413,6 @@ pub const Renderer = struct {
                 device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
                 device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 // device.cmdDraw(command_buffer, 1, 6, 0, 0);
-                device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
-            }
-
-            // draw dots
-            if (self.point_instanced_data) |data| {
-                device.cmdBindPipeline(command_buffer, .graphics, self.circle_pipeline);
-                device.cmdBindVertexBuffers(command_buffer, 0, 1, @ptrCast(&data.vertex_buffer), &offset);
-                device.cmdBindIndexBuffer(command_buffer, data.index_buffer, 0, vk.IndexType.uint32);
-                device.cmdBindDescriptorSets(command_buffer, .graphics, self.pipeline_layout, 0, 1, &.{descriptor_set}, 0, null);
                 device.cmdDrawIndexed(command_buffer, data.n_indices, 1, 0, 0, 0);
             }
 
@@ -733,7 +727,7 @@ pub const Renderer = struct {
             // std.debug.print("aspect_ratio: {d:3}\n", .{aspect_ratio});
             const data = [1]LineUniformBufferObject{.{
                 .aspect_ratio = aspect_ratio,
-                .line_thickness = 0.25,
+                .line_thickness = 0.05,
             }};
             @memcpy(gpu_data, &data);
         }
@@ -1144,11 +1138,31 @@ pub const VulkanContext = struct {
     inline fn createPipeline(
         self: *const VulkanContext,
         pipeline_config: *const PipelineConfig,
-        topology: vk.PrimitiveTopology,
-        blend_enable: bool,
         layout: vk.PipelineLayout,
         render_pass: vk.RenderPass,
     ) !vk.Pipeline {
+        const blend_enable = switch (pipeline_config.topo_type) {
+            .Face => false,
+            .Vertex, .Line => true,
+        };
+        const depth_bias_enable = switch (pipeline_config.topo_type) {
+            .Face => false,
+            .Vertex, .Line => true,
+        };
+        const depth_write_enable = switch (pipeline_config.topo_type) {
+            .Face => true,
+            .Vertex, .Line => false,
+        };
+        const depth_compare_op = switch (pipeline_config.topo_type) {
+            .Face => vk.CompareOp.less,
+            .Vertex, .Line => vk.CompareOp.less_or_equal,
+        };
+        const topology = switch (pipeline_config.topo_type) {
+            .Face => vk.PrimitiveTopology.triangle_list,
+            .Vertex => vk.PrimitiveTopology.point_list,
+            .Line => vk.PrimitiveTopology.triangle_list,
+        };
+
         const vert_spv align(@alignOf(u32)) = @embedFile(pipeline_config.vert_fname).*;
         const frag_spv align(@alignOf(u32)) = @embedFile(pipeline_config.frag_fname).*;
 
@@ -1208,10 +1222,10 @@ pub const VulkanContext = struct {
             .polygon_mode = .fill,
             .cull_mode = .{ .back_bit = false },
             .front_face = .clockwise,
-            .depth_bias_enable = .false,
-            .depth_bias_constant_factor = 0,
+            .depth_bias_enable = if (depth_bias_enable) .true else .false,
+            .depth_bias_constant_factor = if (depth_bias_enable) -2.0 else 0,
             .depth_bias_clamp = 0,
-            .depth_bias_slope_factor = 0,
+            .depth_bias_slope_factor = if (depth_bias_enable) -3.0 else 0,
             .line_width = 1,
         };
 
@@ -1234,8 +1248,8 @@ pub const VulkanContext = struct {
         };
         const pipeline_depth_stencil_state_create_info = vk.PipelineDepthStencilStateCreateInfo{
             .depth_test_enable = .true,
-            .depth_write_enable = .true,
-            .depth_compare_op = .less,
+            .depth_write_enable = if (depth_write_enable) .true else .false,
+            .depth_compare_op = depth_compare_op,
             .depth_bounds_test_enable = .false,
             .min_depth_bounds = 0,
             .max_depth_bounds = 0,
@@ -1429,7 +1443,7 @@ const Swapchain = struct {
         }
         var surface_format = surface_formats[0];
         for (surface_formats) |surface_format_candidate| {
-            if (surface_format_candidate.format == vk.Format.b8g8r8_srgb and surface_format_candidate.color_space == vk.ColorSpaceKHR.srgb_nonlinear_khr) {
+            if (surface_format_candidate.format == vk.Format.b8g8r8a8_srgb and surface_format_candidate.color_space == vk.ColorSpaceKHR.srgb_nonlinear_khr) {
                 surface_format = surface_format_candidate;
             }
         }
