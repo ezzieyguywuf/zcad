@@ -31,7 +31,7 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
         app_ctx.should_exit = true;
         return;
     }
-    const total_vertical_scroll = input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll;
+    const total_vertical_scroll = 10.0 * (input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll);
     const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
 
     const dir_long = app_ctx.focus_point - app_ctx.eye;
@@ -62,6 +62,7 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
 
             app_ctx.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.up));
             app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
+            // std.debug.print("eye: {any}, focus_point: {any}, up: {any}\n", .{ app_ctx.eye, app_ctx.focus_point, app_ctx.up });
         }
         if (input_state.right_button and !app_ctx.prev_input_state.right_button) {}
         if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
@@ -103,7 +104,7 @@ pub fn main() !void {
 
     try stdout.flush(); // Don't forget to flush!
 
-    const eye: zm.Vec = .{ 15, -10, 15, 1 };
+    const eye: zm.Vec = .{ 2000, -1500, 2000, 1 };
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
@@ -114,7 +115,7 @@ pub fn main() !void {
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 1000.0),
+            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 10000.0),
         },
         .should_exit = false,
         .should_fetch_id_buffers = false,
@@ -271,7 +272,7 @@ pub fn main() !void {
 
         if (wnd_ctx.should_resize) {
             const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
-            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
+            app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 10000.0);
             wnd_ctx.resizing_done = true;
         }
 
