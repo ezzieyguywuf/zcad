@@ -3,20 +3,20 @@
 SERVER=http://127.0.0.1
 PORT=4042
 
-V0="-5,-5,-5"
-V1="5,-5,-5"
-V2="5,5,-5"
-V3="-5,5,-5"
-V4="-5,-5,5"
-V5="5,-5,5"
-V6="5,5,5"
-V7="-5,5,5"
+V0="-1000,-1000,-1000"
+V1="1000,-1000,-1000"
+V2="1000,1000,-1000"
+V3="-1000,1000,-1000"
+V4="-1000,-1000,1000"
+V5="1000,-1000,1000"
+V6="1000,1000,1000"
+V7="-1000,1000,1000"
 
 function curl_server() {
   local path="$1"
-  echo "Curling to ${SERVER}:${PORT}${PORT}"
+  echo "Curling to ${SERVER}:${PORT}${path}"
   curl -X GET "${SERVER}:${PORT}${path}" || ("curl error, exiting" && exit 1)
-  sleep 1
+  # sleep 1
 }
 
 # First the wireframe
