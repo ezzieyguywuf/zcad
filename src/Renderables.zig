@@ -116,110 +116,51 @@ pub const RenderedLines = struct {
         };
         const color = [3]f32{ 0, 0, 0 };
 
-        // we need to know how many vertices we have before we add any
         const n: u32 = @intCast(self.vulkan_vertices.items.len);
-
-        // The line will consist of two triangles. First, define the four
-        // corners
         const uid_lower: u32 = @truncate(self.next_uid);
         const uid_upper: u32 = @truncate(self.next_uid >> 32);
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = true, .up = false, .edge = false },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = false, .up = true, .edge = false },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = true, .up = true, .edge = false },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = false, .up = false, .edge = false },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
 
-        // These "edge" vertices will allow for anti-aliasing
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = true, .up = false, .edge = true },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = false, .up = true, .edge = true },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = true, .up = true, .edge = true },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
-        try self.vulkan_vertices.append(allocator, .{
-            .posA = left,
-            .posB = right,
-            .flags = .{ .left = false, .up = false, .edge = true },
-            .colorA = color,
-            .colorB = color,
-            .uid_lower = uid_lower,
-            .uid_upper = uid_upper,
-        });
+        // Line body vertices
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = true, .up = false, .edge = false, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = false, .up = true, .edge = false, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = true, .up = true, .edge = false, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = false, .up = false, .edge = false, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
 
-        // Next, make sure we index them in the correct order
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 1);
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 3);
-        try self.vulkan_indices.append(allocator, n + 1);
+        // Anti-aliasing edge vertices
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = true, .up = false, .edge = true, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = false, .up = true, .edge = true, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = true, .up = true, .edge = true, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .left = false, .up = false, .edge = true, .is_endcap = false, .segment_index = 0 }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
 
-        // and finally the edge indices
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n + 5);
-        try self.vulkan_indices.append(allocator, n + 6);
-        try self.vulkan_indices.append(allocator, n + 2);
-        try self.vulkan_indices.append(allocator, n + 1);
-        try self.vulkan_indices.append(allocator, n + 5);
+        // Line body indices
+        try self.vulkan_indices.appendSlice(allocator, &.{ n, n + 1, n + 2, n, n + 3, n + 1 });
+        try self.vulkan_indices.appendSlice(allocator, &.{ n + 2, n + 5, n + 6, n + 2, n + 1, n + 5 });
+        try self.vulkan_indices.appendSlice(allocator, &.{ n + 4, n + 3, n, n + 4, n + 7, n + 3 });
 
-        try self.vulkan_indices.append(allocator, n + 4);
-        try self.vulkan_indices.append(allocator, n + 3);
-        try self.vulkan_indices.append(allocator, n);
-        try self.vulkan_indices.append(allocator, n + 4);
-        try self.vulkan_indices.append(allocator, n + 7);
-        try self.vulkan_indices.append(allocator, n + 3);
+        const n_caps = 16;
+        const cap_start_index = n + 8;
+
+        // Start cap vertices
+        for (0..n_caps) |i| {
+            try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .up = false, .left = true, .edge = false, .is_endcap = true, .segment_index = @intCast(i) }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        }
+
+        // Start cap indices (triangle fan)
+        for (1..n_caps - 1) |i| {
+            try self.vulkan_indices.appendSlice(allocator, &.{ cap_start_index, cap_start_index + @as(u32, @intCast(i)), cap_start_index + @as(u32, @intCast(i)) + 1 });
+        }
+
+        const cap_end_index = cap_start_index + n_caps;
+
+        // End cap vertices
+        for (0..n_caps) |i| {
+            try self.vulkan_vertices.append(allocator, .{ .posA = left, .posB = right, .flags = .{ .up = false, .left = false, .edge = false, .is_endcap = true, .segment_index = @intCast(i) }, .colorA = color, .colorB = color, .uid_lower = uid_lower, .uid_upper = uid_upper });
+        }
+
+        // End cap indices (triangle fan)
+        for (1..n_caps - 1) |i| {
+            try self.vulkan_indices.appendSlice(allocator, &.{ cap_end_index, cap_end_index + @as(u32, @intCast(i)), cap_end_index + @as(u32, @intCast(i)) + 1 });
+        }
 
         self.next_uid += 1;
         if (self.next_uid == std.math.maxInt(u64)) {
@@ -243,23 +184,23 @@ test "RenderedLines UID generation" {
     // First line
     try rendered_lines.addLine(allocator, line_data1);
     try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[0].uid());
-    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[7].uid()); // Check last vertex of the 8 generated for this line
+    try std.testing.expectEqual(@as(u64, 0), rendered_lines.vulkan_vertices.items[39].uid());
     try std.testing.expectEqual(@as(u64, 1), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 8), rendered_lines.vulkan_vertices.items.len); // 8 vertices per line
+    try std.testing.expectEqual(@as(usize, 40), rendered_lines.vulkan_vertices.items.len);
 
     // Second line
     try rendered_lines.addLine(allocator, line_data2);
-    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[8].uid()); // First vertex of second line
-    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[15].uid()); // Last vertex of second line
+    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[40].uid());
+    try std.testing.expectEqual(@as(u64, 1), rendered_lines.vulkan_vertices.items[79].uid());
     try std.testing.expectEqual(@as(u64, 2), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 16), rendered_lines.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 80), rendered_lines.vulkan_vertices.items.len);
 
     // Third line
     try rendered_lines.addLine(allocator, line_data3);
-    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[16].uid()); // First vertex of third line
-    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[23].uid()); // Last vertex of third line
+    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[80].uid());
+    try std.testing.expectEqual(@as(u64, 2), rendered_lines.vulkan_vertices.items[119].uid());
     try std.testing.expectEqual(@as(u64, 3), rendered_lines.next_uid);
-    try std.testing.expectEqual(@as(usize, 24), rendered_lines.vulkan_vertices.items.len);
+    try std.testing.expectEqual(@as(usize, 120), rendered_lines.vulkan_vertices.items.len);
 }
 
 pub const RenderedFaces = struct {

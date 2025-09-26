@@ -1877,9 +1877,11 @@ pub const Vertex = struct {
 
 pub const LineFlags = packed struct {
     up: bool,
-    left: bool,
+    left: bool, // For endcaps, this means is_start_cap
     edge: bool,
-    _padding: u29 = 0,
+    is_endcap: bool,
+    segment_index: u4, // Allows for up to 16 segments
+    _padding: u24 = 0,
 };
 
 comptime {
