@@ -30,7 +30,8 @@ void main() {
   bool edge = (a_flags & 4u) != 0u;
   bool is_endcap = (a_flags & 8u) != 0u;
   bool is_start_cap = (a_flags & 16u) != 0u;
-  uint segment_index = (a_flags >> 4) & 15u; // Extract 4 bits for segment_index
+  uint segment_index =
+      (a_flags >> 4) & 15u;  // Extract 4 bits for segment_index
 
   // transform both ends of the line into "clip space"
   vec4 clipA = ubo.proj * ubo.view * ubo.model * vec4(a_posA, 1.0);
@@ -51,7 +52,7 @@ void main() {
     vec2 cap_center_ndc;
     vec2 cap_dir;
 
-    if (left) { // Repurposing 'left' to mean 'is_start_cap'
+    if (left) {  // Repurposing 'left' to mean 'is_start_cap'
       cap_center_pos = clipA;
       v_color = vec4(a_colorA, 1);
       cap_center_ndc = ndcA;
@@ -64,17 +65,21 @@ void main() {
     }
 
     // Sweep a 180-degree arc for the semicircle
-    float angle_rad = 3.14159265 * (float(segment_index) / 15.0 - 0.5); // Maps 0..15 to -PI/2..PI/2
+    float angle_rad = 3.14159265 * (float(segment_index) / 15.0 -
+                                    0.5);  // Maps 0..15 to -PI/2..PI/2
 
-    // 1. Calculate the offset vector in a uniform coordinate system (using the uncorrected dir and normal)
-    vec2 offset_vec = (cap_dir * cos(angle_rad) + normal * sin(angle_rad)) * offset;
+    // 1. Calculate the offset vector in a uniform coordinate system (using the
+    // uncorrected dir and normal)
+    vec2 offset_vec =
+        (cap_dir * cos(angle_rad) + normal * sin(angle_rad)) * offset;
 
     // 2. Correct the final offset vector for the screen's aspect ratio
     offset_vec.x /= line.aspect_ratio;
 
     // 3. Apply the corrected offset
     vec2 final_ndc = cap_center_ndc + offset_vec;
-    outPos = vec4(final_ndc * cap_center_pos.w, cap_center_pos.z, cap_center_pos.w);
+    outPos =
+        vec4(final_ndc * cap_center_pos.w, cap_center_pos.z, cap_center_pos.w);
 
   } else {
     // This is the original logic for the line body
@@ -91,7 +96,7 @@ void main() {
       v_color.a = 0;
       offset_amt += antialias_offset;
     }
-    
+
     vec2 corrected_normal = normal;
     corrected_normal.x /= line.aspect_ratio;
 
