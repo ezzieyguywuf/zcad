@@ -26,13 +26,13 @@ Proof-of-concept for mouse picking. Currently hard-coding "1" for each line, but
 from the fragment buffer and getting transferred and used on the cpu side.
 
 [Screen recording 2025-03-27 10.37.16 PM.webm](https://github.com/user-attachments/assets/58a3ed53-2702-4dc8-a3e3-d77580c4a3ce)
-  
+
 Aliasing on left, AntiAliasing on the right
 
 [Screen recording 2025-03-06 10.07.15 PM.webm](https://github.com/user-attachments/assets/f5e516ba-96fb-41df-93d1-37c347230246)
 
 3d finally works
-  
+
 [Screen recording 2025-02-26 11.52.24 PM.webm](https://github.com/user-attachments/assets/2b1aa1c6-643b-42c8-b7cc-2698141c2e85)
 
 3D is broken, the blue face is supposed to go back in the z-direction
@@ -75,54 +75,61 @@ dependencies. You can either use our pre-built image from Docker Hub
 
 This is the quickest way to get started.
 
-1.  **Pull the image from Docker Hub:**
-    ```bash
-    docker pull ezzieyguywuf/zcad-dev:latest
-    ```
+1. **Pull the image from Docker Hub:**
 
-2.  **Run the Docker Container:**
-    To start an interactive session, run the following command from the root of your repository:
-    ```bash
-    docker run --rm -it -v "$(pwd):/app" -w /app ezzieyguywuf/zcad-dev:latest /bin/bash
-    ```
-    *   `--rm`: Automatically removes the container when you exit.
-    *   `-it`: Runs the container in interactive mode with a pseudo-TTY.
-    *   `-v "$(pwd):/app"`: Mounts your project's root directory into `/app` inside the container.
-    *   `-w /app`: Sets the working directory inside the container to `/app`.
-    *   `ezzieyguywuf/zcad-dev:latest`: The Docker Hub image to use.
-    *   `/bin/bash`: Starts a bash shell in the container.
+   ```bash
+   docker pull ezzieyguywuf/zcad-dev:latest
+   ```
+
+1. **Run the Docker Container:**
+   To start an interactive session, run the following command from the root of your repository:
+
+   ```bash
+   docker run --rm -it -v "$(pwd):/app" -w /app ezzieyguywuf/zcad-dev:latest /bin/bash
+   ```
+
+   - `--rm`: Automatically removes the container when you exit.
+   - `-it`: Runs the container in interactive mode with a pseudo-TTY.
+   - `-v "$(pwd):/app"`: Mounts your project's root directory into `/app` inside the container.
+   - `-w /app`: Sets the working directory inside the container to `/app`.
+   - `ezzieyguywuf/zcad-dev:latest`: The Docker Hub image to use.
+   - `/bin/bash`: Starts a bash shell in the container.
 
 ### Option 2: Build Docker Image Locally
 
 If you prefer to build the image yourself or want to customize it:
 
-1.  **Build the Docker Image:**
-    Navigate to the root of the repository and run:
-    ```bash
-    docker build -t zcad-dev -f docker/Dockerfile .
-    ```
-    This will build an image named `zcad-dev` (you can change this tag if you like).
+1. **Build the Docker Image:**
+   Navigate to the root of the repository and run:
 
-2.  **Run the Locally Built Docker Container:**
-    ```bash
-    docker run --rm -it -v "$(pwd):/app" -w /app zcad-dev /bin/bash
-    ```
-    (Replace `zcad-dev` if you used a different tag when building).
+   ```bash
+   docker build -t zcad-dev -f docker/Dockerfile .
+   ```
+
+   This will build an image named `zcad-dev` (you can change this tag if you like).
+
+1. **Run the Locally Built Docker Container:**
+
+   ```bash
+   docker run --rm -it -v "$(pwd):/app" -w /app zcad-dev /bin/bash
+   ```
+
+   (Replace `zcad-dev` if you used a different tag when building).
 
 ### Develop Inside the Container
 
 Once inside the container's bash shell (using either Option 1 or Option 2):
 
--   You'll be in the `/app` directory (your project root).
--   **Build the project:**
-    ```bash
-    zig build
-    ```
--   **Run unit tests:**
-    ```bash
-    zig build test
-    ```
--   Use `git`, `glslc`, etc., as they are installed in the environment.
+- You'll be in the `/app` directory (your project root).
+- **Build the project:**
+  ```bash
+  zig build
+  ```
+- **Run unit tests:**
+  ```bash
+  zig build test
+  ```
+- Use `git`, `glslc`, etc., as they are installed in the environment.
 
 ## Build
 
@@ -144,10 +151,13 @@ $ zig version
 ### System Dependencies
 
 - General:
+
   - `git`
   - `pkg-config`
   - `glslc`
+
 - Libraries:
+
   - Wayland
   - Vulkan
   - X11
@@ -212,6 +222,7 @@ sudo emerge -av \
     x11-libs/libX11 \
     media-gfx/shaderc
 ```
+
 Note: `glslc` is provided by the `media-gfx/shaderc` package. Ensure your system profile is appropriate (e.g., includes `make`).
 
 #### Fedora
@@ -243,7 +254,7 @@ rust), and [mycad](https://github.com/ezzieyguywuf/mycad) written in haskell.
 Actually the order was:
 
 1. mycad in haskell
-2. mycad in c++
-3. rcad in rust
+1. mycad in c++
+1. rcad in rust
 
 Those repositories/readmes probably include some interesting context/history.

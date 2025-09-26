@@ -8,6 +8,6 @@ layout(location = 0) out vec4 f_color;
 layout(location = 2) out uvec2 f_uid;
 
 void main() {
-    f_color = v_color;
-    f_uid = v_uid;
+  f_color = v_color;
+  f_uid = v_uid;
 }

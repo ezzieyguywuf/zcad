@@ -11,7 +11,7 @@ void main() {
   float distance = length(point);
   float alpha = 1 - smoothstep(0.4, 0.49, distance);
   float color = 1 - step(0.5, distance);
-  f_color = vec4(color * v_color.r , color * v_color.g, color * v_color.b, alpha);
+  f_color =
+      vec4(color * v_color.r, color * v_color.g, color * v_color.b, alpha);
   outVertexId = v_id;
 }
-

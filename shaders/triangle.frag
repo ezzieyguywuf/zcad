@@ -7,6 +7,6 @@ layout(location = 0) out vec4 outColor;
 layout(location = 3) out uvec2 outSurfaceId;
 
 void main() {
-    outColor = vec4(fragColor, 1.0);
-    outSurfaceId = outUid;
+  outColor = vec4(fragColor, 1.0);
+  outSurfaceId = outUid;
 }
