@@ -17,6 +17,8 @@ pub const ServerContext = struct {
     vertices_updated_signal: *std.atomic.Value(bool),
     faces_mutex: *std.Thread.Mutex,
     faces_updated_signal: *std.atomic.Value(bool),
+    color_index: u8,
+    color_palette: [8][3]f32,
 };
 
 pub const HttpServer = struct {
@@ -233,7 +235,10 @@ fn handlePostFaces(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.
         server_ctx.faces_mutex.lock();
         defer server_ctx.faces_mutex.unlock();
 
-        server_ctx.rendered_faces.addFace(server_ctx.allocator, points.items, .{ 0.8, 0.8, 0.8 }) catch |err| {
+        const color = server_ctx.color_palette[server_ctx.color_index];
+        server_ctx.color_index = (server_ctx.color_index + 1) % 8;
+
+        server_ctx.rendered_faces.addFace(server_ctx.allocator, points.items, color) catch |err| {
             std.debug.print("HTTP Server: Error adding face to RenderedFaces: {any}\n", .{err});
             res.status = 500;
             try res.json(.{ .err = "Failed to add face to internal storage" }, .{});
@@ -277,6 +282,8 @@ test "HttpServer can shut down without crashing or leaking memory" {
         .vertices_updated_signal = &vertices_updated_signal,
         .faces_mutex = &faces_mutex,
         .faces_updated_signal = &faces_updated_signal,
+        .color_index = 0,
+        .color_palette = .{.{ 0.0, 0.0, 0.0 }} ** 8,
     };
 
     var server_instance = try HttpServer.init(allocator, &server_ctx);
@@ -316,6 +323,8 @@ test "Add line via /lines endpoint" {
         .vertices_updated_signal = &vertices_updated_signal,
         .faces_mutex = &faces_mutex,
         .faces_updated_signal = &faces_updated_signal,
+        .color_index = 0,
+        .color_palette = .{.{ 0.0, 0.0, 0.0 }} ** 8,
     };
 
     // Initialize HttpServer (in a separate thread)
@@ -364,6 +373,8 @@ test "Add vertex via /vertices endpoint" {
         .vertices_updated_signal = &vertices_updated_signal,
         .faces_mutex = &faces_mutex,
         .faces_updated_signal = &faces_updated_signal,
+        .color_index = 0,
+        .color_palette = .{.{ 0.0, 0.0, 0.0 }} ** 8,
     };
 
     // Initialize HttpServer (in a separate thread)
@@ -412,6 +423,8 @@ test "Add face via /faces endpoint" {
         .vertices_updated_signal = &vertices_updated_signal,
         .faces_mutex = &faces_mutex,
         .faces_updated_signal = &faces_updated_signal,
+        .color_index = 0,
+        .color_palette = .{.{ 0.0, 0.0, 0.0 }} ** 8,
     };
 
     // Initialize HttpServer (in a separate thread)

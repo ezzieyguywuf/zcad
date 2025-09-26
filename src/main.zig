@@ -206,6 +206,17 @@ pub fn main() !void {
         .vertices_updated_signal = &vertices_updated_signal,
         .faces_mutex = &faces_mutex,
         .faces_updated_signal = &faces_updated_signal,
+        .color_index = 0,
+        .color_palette = .{
+            .{ 0.6, 0.76, 0.89 },
+            .{ 1.0, 0.7, 0.5 },
+            .{ 0.6, 0.87, 0.6 },
+            .{ 0.8, 0.6, 0.8 },
+            .{ 0.98, 0.6, 0.6 },
+            .{ 0.87, 0.87, 0.53 },
+            .{ 0.89, 0.78, 0.7 },
+            .{ 0.98, 0.74, 0.85 },
+        },
     };
 
     var server = try HttpServer.HttpServer.init(allocator, &server_app_ctx);
