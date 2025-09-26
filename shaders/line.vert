@@ -63,11 +63,16 @@ void main() {
         offset_amt += antialias_offset;
     }
 
+    // Calculate the final position in NDC
+    vec2 final_ndc = outPos.xy / outPos.w;
     if (up) {
-        outPos.xy += normal * offset_amt;
+        final_ndc += normal * offset_amt;
     } else {
-        outPos.xy -= normal * offset_amt;
+        final_ndc -= normal * offset_amt;
     }
+
+    // Convert back to clip space
+    outPos.xy = final_ndc * outPos.w;
 
     gl_Position = outPos;
 }
