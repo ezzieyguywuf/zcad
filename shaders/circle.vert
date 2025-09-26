@@ -16,7 +16,7 @@ layout(location = 1) out flat uvec2 v_id;
 
 void main() {
     gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
-    gl_PointSize = 15.0f;
+    gl_PointSize = 20.0f;
     v_color = inColor;
     v_id = uvec2(inUidLower, inUidUpper);
 }
