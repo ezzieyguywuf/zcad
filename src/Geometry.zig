@@ -271,4 +271,3 @@ test "BoundingBox operations" {
     try std.testing.expectEqual(-200, bbox.min.z);
     try std.testing.expectEqual(100, bbox.max.z);
 }
-
