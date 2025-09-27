@@ -215,3 +215,60 @@ test "Line initialization" {
     const maybe_line = Line.init(p_c, p_c);
     try std.testing.expectError(error.ZeroLengthLine, maybe_line);
 }
+
+pub const BoundingBox = struct {
+    min: Point,
+    max: Point,
+
+    pub fn init() BoundingBox {
+        return BoundingBox{
+            .min = Point{ .x = std.math.maxInt(i64), .y = std.math.maxInt(i64), .z = std.math.maxInt(i64) },
+            .max = Point{ .x = std.math.minInt(i64), .y = std.math.minInt(i64), .z = std.math.minInt(i64) },
+        };
+    }
+
+    pub fn expand(self: *BoundingBox, p: *const Point) void {
+        self.min.x = @min(self.min.x, p.x);
+        self.min.y = @min(self.min.y, p.y);
+        self.min.z = @min(self.min.z, p.z);
+        self.max.x = @max(self.max.x, p.x);
+        self.max.y = @max(self.max.y, p.y);
+        self.max.z = @max(self.max.z, p.z);
+    }
+};
+
+test "BoundingBox operations" {
+    var bbox = BoundingBox.init();
+
+    // Test initial state
+    try std.testing.expectEqual(std.math.maxInt(i64), bbox.min.x);
+    try std.testing.expectEqual(std.math.minInt(i64), bbox.max.x);
+
+    // Expand with first point
+    bbox.expand(&.{ .x = 10, .y = -10, .z = 100 });
+    try std.testing.expectEqual(10, bbox.min.x);
+    try std.testing.expectEqual(10, bbox.max.x);
+    try std.testing.expectEqual(-10, bbox.min.y);
+    try std.testing.expectEqual(-10, bbox.max.y);
+    try std.testing.expectEqual(100, bbox.min.z);
+    try std.testing.expectEqual(100, bbox.max.z);
+
+    // Expand with a second point that should set a new min/max
+    bbox.expand(&.{ .x = 0, .y = 20, .z = -200 });
+    try std.testing.expectEqual(0, bbox.min.x);
+    try std.testing.expectEqual(10, bbox.max.x);
+    try std.testing.expectEqual(-10, bbox.min.y);
+    try std.testing.expectEqual(20, bbox.max.y);
+    try std.testing.expectEqual(-200, bbox.min.z);
+    try std.testing.expectEqual(100, bbox.max.z);
+
+    // Expand with a point that is within the current bounds
+    bbox.expand(&.{ .x = 5, .y = 5, .z = 5 });
+    try std.testing.expectEqual(0, bbox.min.x);
+    try std.testing.expectEqual(10, bbox.max.x);
+    try std.testing.expectEqual(-10, bbox.min.y);
+    try std.testing.expectEqual(20, bbox.max.y);
+    try std.testing.expectEqual(-200, bbox.min.z);
+    try std.testing.expectEqual(100, bbox.max.z);
+}
+
