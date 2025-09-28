@@ -28,17 +28,6 @@ def draw_line(p0, p1):
         print(f"  Error connecting to server: {e}")
         exit(1)
 
-def draw_vertex(p0):
-    """Sends a request to the zcad server to draw a vertex."""
-    params = urllib.parse.urlencode({'p0': p0})
-    url = f"{SERVER_URL}/vertices?{params}"
-    try:
-        with urllib.request.urlopen(url) as response:
-            response.read()
-    except Exception as e:
-        print(f"  Error connecting to server: {e}")
-        exit(1)
-
 def main():
     """Calculates points and draws a circle."""
     print(f"Generating and drawing a circle with {SEGMENTS} segments and radius {RADIUS}...")
@@ -46,7 +35,6 @@ def main():
     # Calculate the coordinates for the first point
     last_x = CENTER_X + RADIUS
     last_y = CENTER_Y
-    draw_vertex(f"{last_x},{last_y},{CENTER_Z}")
 
     # Loop through the segments to draw the circle
     for i in range(1, SEGMENTS + 1):
@@ -66,7 +54,6 @@ def main():
 
         # Draw the line segment and the new vertex
         draw_line(p0, p1)
-        draw_vertex(p1)
 
         # Update the last point for the next iteration
         last_x = x
