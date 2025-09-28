@@ -3,9 +3,9 @@ const vkr = @import("VulkanRenderer.zig");
 const geom = @import("Geometry.zig");
 
 pub const RenderedVertices = struct {
-    vulkan_vertices: std.ArrayListUnmanaged(vkr.Vertex),
-    vulkan_indices: std.ArrayListUnmanaged(u32),
-    next_uid: u64, // For potential future use with picking
+    vulkan_vertices: std.ArrayList(vkr.Vertex),
+    vulkan_indices: std.ArrayList(u32),
+    next_uid: u64,
 
     pub fn init() RenderedVertices {
         return RenderedVertices{
@@ -18,6 +18,11 @@ pub const RenderedVertices = struct {
     pub fn deinit(self: *RenderedVertices, allocator: std.mem.Allocator) void {
         self.vulkan_vertices.deinit(allocator);
         self.vulkan_indices.deinit(allocator);
+    }
+
+    pub fn clear(self: *RenderedVertices) void {
+        self.vulkan_vertices.clearRetainingCapacity();
+        self.vulkan_indices.clearRetainingCapacity();
     }
 
     // Adds a single vertex.
@@ -40,13 +45,8 @@ pub const RenderedVertices = struct {
         });
         try self.vulkan_indices.append(allocator, n_vertices);
 
-        // Increment UID if we want to assign a unique ID per vertex
-        // For now, UIDs might not be directly used by the shader for points,
-        // but good to have for consistency or future enhancements.
-        // If vertex picking is implemented, this UID could be used.
         self.next_uid += 1;
         if (self.next_uid == std.math.maxInt(u64)) {
-            // Or handle this more gracefully depending on requirements
             return error.RanOutOfUidsForRenderedVertices;
         }
     }
@@ -79,9 +79,6 @@ test "RenderedVertices basic operations" {
     try std.testing.expectEqualSlices(f32, &.{ 4.0, 5.0, 6.0 }, &vertices.vulkan_vertices.items[1].pos);
     try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0, 0.0 }, &vertices.vulkan_vertices.items[1].color);
     try std.testing.expectEqual(@as(u32, 1), vertices.vulkan_indices.items[1]);
-
-    // Test UID overflow error if RanOutOfUidsForRenderedVertices is a public error
-    // For now, this is not tested as the error is not explicitly made public.
 }
 
 pub const RenderedLines = struct {
@@ -101,6 +98,11 @@ pub const RenderedLines = struct {
     pub fn deinit(self: *RenderedLines, allocator: std.mem.Allocator) void {
         self.vulkan_vertices.deinit(allocator);
         self.vulkan_indices.deinit(allocator);
+    }
+
+    pub fn clear(self: *RenderedLines) void {
+        self.vulkan_vertices.clearRetainingCapacity();
+        self.vulkan_indices.clearRetainingCapacity();
     }
 
     pub fn addLine(self: *RenderedLines, allocator: std.mem.Allocator, line: geom.Line) !void {

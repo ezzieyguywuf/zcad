@@ -8,6 +8,7 @@ const zm = @import("zmath");
 const rndr = @import("Renderables.zig");
 const geom = @import("Geometry.zig");
 const HttpServer = @import("HttpServer.zig");
+const wrld = @import("World.zig");
 
 const AppContext = struct {
     prev_input_state: wnd.InputState,
@@ -172,15 +173,6 @@ pub fn main() !void {
     var renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(wnd_ctx.width), @intCast(wnd_ctx.height));
     defer renderer.deinit(allocator, &vk_ctx);
 
-    var rendered_lines = rndr.RenderedLines.init();
-    defer rendered_lines.deinit(allocator);
-
-    var rendered_vertices = rndr.RenderedVertices.init();
-    defer rendered_vertices.deinit(allocator);
-
-    var rendered_faces = rndr.RenderedFaces.init();
-    defer rendered_faces.deinit(allocator);
-
     {
         const aspect_ratio = @as(f32, @floatFromInt(wnd_ctx.width)) / @as(f32, @floatFromInt(wnd_ctx.height));
         app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
@@ -189,40 +181,40 @@ pub fn main() !void {
     var id_buffers = vkr.IdBuffers.init();
     defer id_buffers.deinit(allocator);
 
-    var lines_mutex = std.Thread.Mutex{};
-    var lines_updated_signal = std.atomic.Value(bool).init(false);
-    var vertices_mutex = std.Thread.Mutex{};
-    var vertices_updated_signal = std.atomic.Value(bool).init(false);
-    var faces_mutex = std.Thread.Mutex{};
-    var faces_updated_signal = std.atomic.Value(bool).init(false);
+    var world = wrld.World.init();
+    defer world.deinit(allocator);
+
+    var tesselator = wrld.Tesselator.init(&world);
+    const tesselator_thread = try std.Thread.spawn(.{}, wrld.Tesselator.run, .{&tesselator});
+    defer {
+        tesselator.stop();
+        tesselator_thread.join();
+    }
+
     var server_app_ctx = HttpServer.ServerContext{
-        .rendered_lines = &rendered_lines,
-        .rendered_vertices = &rendered_vertices,
-        .rendered_faces = &rendered_faces,
+        .world = &world,
         .allocator = allocator,
-        .lines_mutex = &lines_mutex,
-        .lines_updated_signal = &lines_updated_signal,
-        .vertices_mutex = &vertices_mutex,
-        .vertices_updated_signal = &vertices_updated_signal,
-        .faces_mutex = &faces_mutex,
-        .faces_updated_signal = &faces_updated_signal,
-        .color_index = 0,
-        .color_palette = .{
-            .{ 0.6, 0.76, 0.89 },
-            .{ 1.0, 0.7, 0.5 },
-            .{ 0.6, 0.87, 0.6 },
-            .{ 0.8, 0.6, 0.8 },
-            .{ 0.98, 0.6, 0.6 },
-            .{ 0.87, 0.87, 0.53 },
-            .{ 0.89, 0.78, 0.7 },
-            .{ 0.98, 0.74, 0.85 },
-        },
+        .tessellation_cond = &(tesselator.should_tesselate),
     };
 
     var server = try HttpServer.HttpServer.init(allocator, &server_app_ctx);
     defer server.deinit(allocator);
 
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
+        if (tesselator.tessellation_ready.isSet()) {
+            tesselator.tessellation_ready.reset();
+
+            tesselator.mut.lock();
+            defer tesselator.mut.unlock();
+
+            if (tesselator.renderable_vertices.vulkan_vertices.items.len > 0 and tesselator.renderable_vertices.vulkan_indices.items.len > 0) {
+                try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, tesselator.renderable_vertices.vulkan_vertices.items, tesselator.renderable_vertices.vulkan_indices.items);
+            }
+            if (tesselator.renderable_lines.vulkan_vertices.items.len > 0 and tesselator.renderable_lines.vulkan_indices.items.len > 0) {
+                try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, tesselator.renderable_lines.vulkan_vertices.items, tesselator.renderable_lines.vulkan_indices.items);
+            }
+        }
+
         if (app_ctx.should_fetch_id_buffers) {
             app_ctx.should_fetch_id_buffers = false;
             try id_buffers.fill(allocator, &renderer, &vk_ctx);
@@ -244,41 +236,6 @@ pub fn main() !void {
                     std.debug.print("no item clicked\n", .{});
                 }
             }
-        }
-
-        // Check if lines were updated by the HTTP server
-        if (server_app_ctx.lines_updated_signal.load(.acquire)) {
-            std.debug.print("Main thread: Detected lines_updated_signal.\n", .{});
-            server_app_ctx.lines_mutex.lock();
-            std.debug.print("Main thread: Mutex acquired. Uploading {d} line vertices.\n", .{rendered_lines.vulkan_vertices.items.len});
-            try renderer.uploadInstanced(vkr.Line, &vk_ctx, .Lines, rendered_lines.vulkan_vertices.items, rendered_lines.vulkan_indices.items);
-            std.debug.print("trying to unlock in main\n", .{});
-            server_app_ctx.lines_mutex.unlock();
-            std.debug.print("unlocked in main\n", .{});
-            server_app_ctx.lines_updated_signal.store(false, .release); // Reset the signal
-            std.debug.print("Main thread: Renderer updated with new lines. Signal reset.\n", .{});
-        }
-
-        // Check if vertices were updated by the HTTP server
-        if (server_app_ctx.vertices_updated_signal.load(.acquire)) {
-            std.debug.print("Main thread: Detected vertices_updated_signal.\n", .{});
-            server_app_ctx.vertices_mutex.lock();
-            std.debug.print("Main thread: Mutex acquired. Uploading {d} vertices.\n", .{rendered_vertices.vulkan_vertices.items.len});
-            try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Points, rendered_vertices.vulkan_vertices.items, rendered_vertices.vulkan_indices.items);
-            server_app_ctx.vertices_mutex.unlock();
-            server_app_ctx.vertices_updated_signal.store(false, .release); // Reset the signal
-            std.debug.print("Main thread: Renderer updated with new vertices. Signal reset.\n", .{});
-        }
-
-        // Check if faces were updated by the HTTP server
-        if (server_app_ctx.faces_updated_signal.load(.acquire)) {
-            std.debug.print("Main thread: Detected faces_updated_signal.\n", .{});
-            server_app_ctx.faces_mutex.lock();
-            std.debug.print("Main thread: Mutex acquired. Uploading {d} face vertices.\n", .{rendered_faces.vulkan_vertices.items.len});
-            try renderer.uploadInstanced(vkr.Vertex, &vk_ctx, .Triangles, rendered_faces.vulkan_vertices.items, rendered_faces.vulkan_indices.items);
-            server_app_ctx.faces_mutex.unlock();
-            server_app_ctx.faces_updated_signal.store(false, .release); // Reset the signal
-            std.debug.print("Main thread: Renderer updated with new faces. Signal reset.\n", .{});
         }
 
         if (wnd_ctx.should_resize) {

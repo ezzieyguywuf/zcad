@@ -91,6 +91,9 @@ const InstancedData = struct {
             .{ .transfer_dst_bit = true, .index_buffer_bit = true },
         );
 
+        try vk_ctx.device.bindBufferMemory(vertex_buffer, vertex_memory, 0);
+        try vk_ctx.device.bindBufferMemory(index_buffer, index_memory, 0);
+
         return InstancedData{
             .vertex_buffer = vertex_buffer,
             .vertex_memory = vertex_memory,
@@ -530,6 +533,8 @@ pub const Renderer = struct {
         vertices: []const T,
         indices: []const u32,
     ) !void {
+        try self.swapchain.waitForAllFences(&vk_ctx.device);
+
         const instanced_data: *?InstancedData = switch (data_type) {
             .Points => &self.point_instanced_data,
             .Lines => &self.line_instanced_data,
@@ -541,8 +546,8 @@ pub const Renderer = struct {
             }
             instanced_data.* = try InstancedData.init(T, vk_ctx, vertices, indices);
         }
-        try self.transferToDevice(vk_ctx, T, vertices, instanced_data.*.?.vertex_buffer, instanced_data.*.?.vertex_memory);
-        try self.transferToDevice(vk_ctx, u32, indices, instanced_data.*.?.index_buffer, instanced_data.*.?.index_memory);
+        try self.transferToDevice(vk_ctx, T, vertices, instanced_data.*.?.vertex_buffer);
+        try self.transferToDevice(vk_ctx, u32, indices, instanced_data.*.?.index_buffer);
 
         try self.createCommandBuffers(&vk_ctx.device, .{ .width = @intCast(self.width), .height = @intCast(self.height) });
     }
@@ -554,7 +559,6 @@ pub const Renderer = struct {
         comptime T: type,
         from_data: []const T,
         to_buffer: vk.Buffer,
-        to_buffer_memory: vk.DeviceMemory,
     ) !void {
         const staging_buffer, const staging_memory = try vk_ctx.createBuffer(T, from_data.len, .{ .transfer_src_bit = true });
         defer vk_ctx.device.destroyBuffer(staging_buffer, null);
@@ -566,7 +570,6 @@ pub const Renderer = struct {
         vk_ctx.device.unmapMemory(staging_memory);
 
         try vk_ctx.device.bindBufferMemory(staging_buffer, staging_memory, 0);
-        try vk_ctx.device.bindBufferMemory(to_buffer, to_buffer_memory, 0);
         try self.copyBuffer(vk_ctx, staging_buffer, to_buffer, from_data.len * @sizeOf(T));
     }
 
