@@ -12,14 +12,19 @@ const wrld = @import("World.zig");
 
 const AppContext = struct {
     prev_input_state: wnd.InputState,
-    eye: zm.Vec,
-    focus_point: zm.Vec,
-    up: zm.Vec,
+    camera: Camera,
     mvp_ubo: vkr.MVPUniformBufferObject,
     should_exit: bool,
     should_fetch_id_buffers: bool,
     pointer_x: usize,
     pointer_y: usize,
+};
+
+const Camera = struct {
+    eye: zm.Vec,
+    focus_point: zm.Vec,
+    up: zm.Vec,
+    mut: std.Thread.Mutex,
 };
 
 const OsWindow = union(wnd.WindowingType) {
@@ -35,7 +40,9 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     const total_vertical_scroll = 10.0 * (input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll);
     const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
 
-    const dir_long = app_ctx.focus_point - app_ctx.eye;
+    app_ctx.camera.mut.lock();
+    defer app_ctx.camera.mut.unlock();
+    const dir_long = app_ctx.camera.focus_point - app_ctx.camera.eye;
     const dir = zm.normalize3(dir_long);
     const dir_len = zm.length3(dir_long)[0];
 
@@ -54,16 +61,15 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
             // TODO rotation around focus_point
             const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
             const angle_x = delta_radians * delta_x;
-            const rotate_x = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle_x));
+            const rotate_x = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle_x));
 
             const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
             const angle_y = delta_radians * delta_y;
-            const axis = zm.cross3(app_ctx.eye, app_ctx.up);
+            const axis = zm.cross3(app_ctx.camera.eye, app_ctx.camera.up);
             const rotate_y = zm.matFromAxisAngle(axis, @floatCast(angle_y));
 
-            app_ctx.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.up));
-            app_ctx.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.eye));
-            // std.debug.print("eye: {any}, focus_point: {any}, up: {any}\n", .{ app_ctx.eye, app_ctx.focus_point, app_ctx.up });
+            app_ctx.camera.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.up));
+            app_ctx.camera.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.eye));
         }
         if (input_state.right_button and !app_ctx.prev_input_state.right_button) {}
         if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
@@ -71,13 +77,13 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
 
     if (total_horizontal_scroll != 0) {
         const angle = delta_radians * total_horizontal_scroll;
-        const rotate = zm.matFromAxisAngle(app_ctx.up, @floatCast(angle));
+        const rotate = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle));
         const new_dir_long = zm.mul(rotate, dir_long);
-        app_ctx.focus_point = app_ctx.eye + new_dir_long;
+        app_ctx.camera.focus_point = app_ctx.camera.eye + new_dir_long;
     }
 
     if (total_vertical_scroll < 0 or dir_len > delta_eye_len) {
-        app_ctx.eye += @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
+        app_ctx.camera.eye += @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
     }
 
     app_ctx.prev_input_state = input_state;
@@ -110,9 +116,12 @@ pub fn main() !void {
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = AppContext{
         .prev_input_state = wnd.InputState{},
-        .eye = eye,
-        .focus_point = focus_point,
-        .up = up,
+        .camera = .{
+            .eye = eye,
+            .focus_point = focus_point,
+            .up = up,
+            .mut = .{},
+        },
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
@@ -250,7 +259,9 @@ pub fn main() !void {
         };
         if (!should_render) continue;
 
-        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.eye, app_ctx.focus_point, app_ctx.up);
+        app_ctx.camera.mut.lock();
+        app_ctx.mvp_ubo.view = zm.lookAtRh(app_ctx.camera.eye, app_ctx.camera.focus_point, app_ctx.camera.up);
+        app_ctx.camera.mut.unlock();
         try renderer.render(
             allocator,
             &vk_ctx,
