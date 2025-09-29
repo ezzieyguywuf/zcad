@@ -98,11 +98,19 @@ jobs:
         fi
 
         echo "==> Extracting and installing Zig..."
-        mkdir zig-dist
-        tar -xf zig.tar.xz -C ./zig-dist --strip-components=1
-        echo "$PWD/zig-dist" >> $GITHUB_PATH
-
+        # Get the top-level directory name from the tarball without extracting the whole thing.
+        ZIG_DIR_NAME=$(tar -tf zig.tar.xz | head -n 1 | cut -d'/' -f1)
+        
+        # Extract the archive.
+        tar -xf zig.tar.xz
+        
+        echo "==> Adding Zig to PATH..."
+        # Add the absolute path to the extracted directory to GITHUB_PATH for subsequent steps.
+        echo "$PWD/$ZIG_DIR_NAME" >> $GITHUB_PATH
+        
         echo "==> Verifying Zig installation..."
+        # Also add it to the current step's PATH for the verification command to work.
+        export PATH="$PWD/$ZIG_DIR_NAME:$PATH"
         zig version
 
     - name: Run tests with Zig (master)
