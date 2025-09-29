@@ -1,28 +1,29 @@
 name: Zig CI
+
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
-  # Run daily at 10:00 UTC (5 AM EST / 6 AM EDT). This is to ensure we don't
-  # break on zig nightly
+  # Run daily at 10:00 UTC (5 AM EST / 6 AM EDT).
   schedule:
     - cron: '0 10 * * *'
 
 jobs:
-  test:
+  test-stable:
+    name: Test (Stable Zig)
     runs-on: ubuntu-latest
     container:
       image: ezzieyguywuf/zcad:0.15.1
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
     - name: Run tests
       run: zig build test
+
   format:
+    name: Check Formatting
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -34,18 +35,20 @@ jobs:
       run: |
         pip install mdformat
         mdformat --check .
-  test_zig_nightly:
+
+  test-nightly:
+    name: Test (Zig Nightly)
     runs-on: ubuntu-latest
     container:
       image: ezzieyguywuf/zcad:0.15.1
-    - name: Fetch Zig nightly
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Install latest Zig from master
       run: |
         set -euo pipefail
-
-        echo "==> Installing dependencies..."
-        sudo apt-get update
-        sudo apt-get install -y minisign jq wget
-
         # Public key from https://ziglang.org/download/
         ZSF_PUBKEY="RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
 
@@ -53,7 +56,6 @@ jobs:
         JSON_PAYLOAD=$(curl -s https://ziglang.org/download/index.json)
         TARBALL_PATH=$(echo "$JSON_PAYLOAD" | jq -r '.master."x86_64-linux".tarball')
         TARBALL_FILENAME=$(basename "$TARBALL_PATH")
-
         if [ -z "$TARBALL_FILENAME" ]; then
           echo "Error: Could not parse Zig download path from index.json" >&2
           exit 1
@@ -61,15 +63,12 @@ jobs:
         echo "Target tarball: $TARBALL_FILENAME"
 
         echo "==> Fetching and shuffling community mirror list..."
-        # Fetch the list, filter out any empty lines, and shuffle it.
         MIRROR_LIST=$(curl -s https://ziglang.org/download/community-mirrors.txt | grep . | shuf)
 
         DOWNLOAD_SUCCESS=false
-        # Loop through community mirrors
         for mirror in $MIRROR_LIST; do
           TARBALL_URL="$mirror/$TARBALL_FILENAME"
           MINISIG_URL="$TARBALL_URL.minisig"
-
           echo "--> Attempting download from mirror: $mirror"
           if wget -q -O zig.tar.xz "$TARBALL_URL" && wget -q -O zig.tar.xz.minisig "$MINISIG_URL"; then
             echo "Download complete. Verifying signature..."
@@ -85,12 +84,10 @@ jobs:
           fi
         done
 
-        # Fallback to official server if all mirrors fail
         if [ "$DOWNLOAD_SUCCESS" = false ]; then
           echo "--> All mirrors failed. Attempting fallback to ziglang.org..."
           TARBALL_URL="https://ziglang.org$TARBALL_PATH"
           MINISIG_URL="$TARBALL_URL.minisig"
-
           if wget -q -O zig.tar.xz "$TARBALL_URL" && wget -q -O zig.tar.xz.minisig "$MINISIG_URL"; then
             echo "Download complete. Verifying signature..."
             if minisign -Vm zig.tar.xz -P "$ZSF_PUBKEY"; then
@@ -110,21 +107,16 @@ jobs:
         fi
 
         echo "==> Extracting and installing Zig..."
-        # The directory name is simply the tarball filename without the extension.
         ZIG_DIR_NAME=${TARBALL_FILENAME%.tar.xz}
-
         echo "Derived Zig directory name: $ZIG_DIR_NAME"
-
-        # Extract the archive.
         tar -xf zig.tar.xz
 
         echo "==> Adding Zig to PATH..."
-        # Add the absolute path to the extracted directory to GITHUB_PATH for subsequent steps.
         echo "$PWD/$ZIG_DIR_NAME" >> $GITHUB_PATH
 
         echo "==> Verifying Zig installation..."
-        # Also add it to the current step's PATH for the verification command to work.
         export PATH="$PWD/$ZIG_DIR_NAME:$PATH"
         zig version
-    - name: Run tests
+
+    - name: Run tests with Zig (master)
       run: zig build test
