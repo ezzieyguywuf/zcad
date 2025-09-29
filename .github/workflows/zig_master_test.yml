@@ -1,0 +1,35 @@
+name: Zig Master CI
+
+on:
+  # Run on pushes to main and on PRs to main to catch breakages early.
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Run daily at 10:00 UTC (5 AM EST / 6 AM EDT).
+  schedule:
+    - cron: '0 10 * * *'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  test-on-master:
+    name: Test on Zig Master
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # We must fetch submodules for the tests to work.
+        submodules: recursive
+
+    - name: Set up Zig (master)
+      uses: mlugg/setup-zig@v1
+      with:
+        version: master
+
+    - name: Run tests with Zig (master)
+      run: zig build test
