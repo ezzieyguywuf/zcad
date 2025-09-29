@@ -19,6 +19,7 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      tag: "v0.15.1"
     - name: Run tests
       run: zig build test
 
