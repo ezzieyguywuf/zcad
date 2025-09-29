@@ -47,6 +47,7 @@ jobs:
       with:
         submodules: recursive
     - name: Install latest Zig from master
+      shell: bash
       run: |
         set -euo pipefail
         # Public key from https://ziglang.org/download/
