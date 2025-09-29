@@ -26,10 +26,41 @@ jobs:
         # We must fetch submodules for the tests to work.
         submodules: recursive
 
-    - name: Set up Zig (master)
-      uses: mlugg/setup-zig@v1
-      with:
-        version: master-ci
+    - name: Install latest Zig from master
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+
+        echo "==> Finding latest successful workflow run for ziglang/zig master..."
+        # Find the ID of the latest successful workflow run on the master branch of ziglang/zig
+        run_id=$(gh run list --repo ziglang/zig --workflow "CI" --branch master --status success --limit 1 --json databaseId -q '.[0].databaseId')
+        if [ -z "$run_id" ]; then
+          echo "Error: Could not find a successful workflow run."
+          exit 1
+        fi
+        echo "Found run ID: $run_id"
+
+        echo "==> Finding URL for zig-linux-x86_64 artifact..."
+        # Find the URL of the artifact for linux-x86_64
+        artifact_url=$(gh run view --repo ziglang/zig "$run_id" --json artifacts -q '.artifacts[] | select(.name=="zig-linux-x86_64") | .url')
+        if [ -z "$artifact_url" ]; then
+          echo "Error: Could not find artifact URL for zig-linux-x86_64."
+          exit 1
+        fi
+        echo "Found artifact URL: $artifact_url"
+
+        echo "==> Downloading artifact..."
+        # Download the artifact
+        gh run download --repo ziglang/zig "$run_id" --name "zig-linux-x86_64" --dir ./zig-dist
+
+        echo "==> Extracting and installing Zig..."
+        # Extract the tarball and add zig to the PATH
+        tar -xf ./zig-dist/zig-linux-x86_64-*.tar.xz -C ./zig-dist
+        echo "$PWD/zig-dist/zig-linux-x86_64-*/" >> $GITHUB_PATH
+        
+        echo "==> Verifying Zig installation..."
+        zig version
 
     - name: Run tests with Zig (master)
       run: zig build test
