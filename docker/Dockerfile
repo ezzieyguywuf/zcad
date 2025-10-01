@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the Zig download script into the image
-COPY download_zig.sh /usr/local/bin/download_zig
+COPY docker/download_zig.sh /usr/local/bin/download_zig
 # Install both versions of Zig and set up symlinks in a single layer
 RUN chmod +x /usr/local/bin/download_zig && \
     download_zig '0.15.1' '/opt/zig-0.15.1' && \
