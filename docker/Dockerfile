@@ -5,6 +5,8 @@ FROM ubuntu:latest
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install essential build tools and dependencies
+# Note: minisign and jq are used for fetching/validating zig nightly precompiled
+# binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -19,26 +21,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvulkan-dev \
     libx11-dev \
     glslc \
+    minisign \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Zig 0.15.1
-ARG ZIG_VERSION=0.15.1
-ARG ZIG_TARGET_ARCH=x86_64
-ARG ZIG_TARGET_OS=linux
-RUN mkdir -p /usr/local/zig_install && \
-    cd /usr/local/zig_install && \
-    wget -O zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_TARGET_ARCH}-${ZIG_TARGET_OS}-${ZIG_VERSION}.tar.xz" && \
-    tar -xf zig.tar.xz --strip-components=1 && \
-    mv /usr/local/zig_install /usr/local/zig && \
-    ln -s /usr/local/zig/zig /usr/local/bin/zig && \
-    rm -rf /usr/local/zig_install
+# Copy the Zig download script into the image
+COPY download_zig.sh /usr/local/bin/download_zig
+# Install both versions of Zig and set up symlinks in a single layer
+RUN chmod +x /usr/local/bin/download_zig && \
+    download_zig '0.15.1' '/opt/zig-0.15.1' && \
+    download_zig 'master' '/opt/zig-master' && \
+    ln -s /opt/zig-master/zig /usr/local/bin/zig && \
+    ln -s /opt/zig-0.15.1/zig /usr/local/bin/zig-0.15.1
 
 # Set working directory
 WORKDIR /app
 
-# Verify installations (optional, but good for debugging Dockerfile)
-RUN zig version
-RUN if command -v glslc &> /dev/null; then glslc --version; else echo "glslc not found directly, check shaderc or other packages"; fi
-
-# Default command (optional)
-# CMD ["/bin/bash"]
+# Verify installations
+RUN zig version && \
+    zig-0.15.1 version && \
+    if command -v glslc &> /dev/null; then glslc --version; else echo "glslc not found directly, check shaderc or other packages"; fi
