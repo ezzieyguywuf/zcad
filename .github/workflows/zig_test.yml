@@ -2,9 +2,9 @@ name: Zig CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, v0.15.1 ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, v0.15.1 ]
 
   # Run daily at 10:00 UTC (5 AM EST / 6 AM EDT).
   schedule:
@@ -13,14 +13,13 @@ on:
 jobs:
   test-stable:
     name: Test (Stable Zig)
+    if: github.ref == 'refs/heads/v0.15.1'
     runs-on: ubuntu-latest
     container:
       image: ezzieyguywuf/zcad:0.15.1
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        ref: "v0.15.1"
     - name: Run tests
       run: zig build test
 
@@ -40,6 +39,7 @@ jobs:
 
   test-nightly:
     name: Test (Zig Nightly)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     container:
       image: ezzieyguywuf/zcad:0.15.1
