@@ -19,7 +19,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      ref: "v0.15.1"
+      with:
+        ref: "v0.15.1"
     - name: Run tests
       run: zig build test
 
