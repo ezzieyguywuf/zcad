@@ -9,6 +9,7 @@ pub const ServerContext = struct {
     world: *World,
     allocator: std.mem.Allocator, // Main application's allocator
     tessellation_cond: *std.Thread.Condition,
+    stats: Stats,
 };
 
 pub const HttpServer = struct {
@@ -28,6 +29,8 @@ pub const HttpServer = struct {
         server.* = try Server.init(allocator, .{ .port = 4042 }, server_ctx);
 
         var router = try server.router(.{});
+
+        router.get("/stats", handleGetStats, .{});
         // TODO: Re-examine if GET is the right verb for this endpoint.
         // It modifies server-side state, so POST might be more appropriate,
         // but this requires fixing the test client's handling of bodiless POST requests.
@@ -53,6 +56,52 @@ pub const HttpServer = struct {
         allocator.destroy(self.server);
     }
 };
+
+const Stats = struct {
+    frametime_ms: f64,
+    bytes_uploaded_to_gpu: u64,
+    mut: std.Thread.Mutex,
+};
+
+fn trimMutField(T: type) type {
+    const T_info = @typeInfo(T).@"struct";
+    var new_fields: [T_info.fields.len - 1]std.builtin.Type.StructField = undefined;
+    var new_field_idx: usize = 0;
+
+    for (T_info.fields) |field| {
+        if (std.mem.eql(u8, field.name, "mut")) {
+            continue;
+        }
+        new_fields[new_field_idx] = field;
+        new_field_idx += 1;
+    }
+
+    return @Type(.{
+        .@"struct" = .{
+            .layout = .auto,
+            .fields = &new_fields,
+            .decls = &[_]std.builtin.Type.Declaration{},
+            .is_tuple = false,
+        },
+    });
+}
+
+fn handleGetStats(server_context: *ServerContext, _: *httpz.Request, res: *httpz.Response) !void {
+    server_context.stats.mut.lock();
+    const stats = server_context.stats;
+    server_context.stats.mut.unlock();
+
+    const StatsNoMutType = trimMutField(Stats);
+    var stats_no_mut: StatsNoMutType = undefined;
+    inline for (@typeInfo(StatsNoMutType).@"struct".fields) |field| {
+        @field(stats_no_mut, field.name) = @field(stats, field.name);
+    }
+    const fps = 1 / (stats_no_mut.frametime_ms / std.time.ms_per_s);
+
+    res.status = 200;
+    try res.json(.{ .fps = fps, .raw = stats_no_mut }, .{});
+    try res.writer().writeByte('\n');
+}
 
 const ParsePointError = error{
     InvalidFormat,
@@ -181,6 +230,11 @@ test "Add vertex via /vertices endpoint" {
         .world = &world_storage,
         .allocator = allocator,
         .tessellation_cond = &tessellation_cond,
+        .stats = .{
+            .frametime_ms = 0,
+            .bytes_uploaded_to_gpu = 0,
+            .mut = .{},
+        },
     };
 
     // Initialize HttpServer (in a separate thread)

@@ -18,19 +18,12 @@ const AppContext = struct {
     should_fetch_id_buffers: bool,
     pointer_x: usize,
     pointer_y: usize,
-    stats: Stats,
 };
 
 const Camera = struct {
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
-    mut: std.Thread.Mutex,
-};
-
-const Stats = struct {
-    frametime: f64,
-    bytes_uploaded_to_gpu: u64,
     mut: std.Thread.Mutex,
 };
 
@@ -138,11 +131,6 @@ pub fn main() !void {
         .should_fetch_id_buffers = false,
         .pointer_x = 0,
         .pointer_y = 0,
-        .stats = .{
-            .frametime = 0,
-            .bytes_uploaded_to_gpu = 0,
-            .mut = .{},
-        },
     };
 
     var args = try std.process.argsWithAllocator(allocator);
@@ -212,13 +200,18 @@ pub fn main() !void {
         tesselator_thread.join();
     }
 
-    var server_app_ctx = HttpServer.ServerContext{
+    var server_ctx = HttpServer.ServerContext{
         .world = &world,
         .allocator = allocator,
         .tessellation_cond = &(tesselator.should_tesselate),
+        .stats = .{
+            .frametime_ms = 0,
+            .bytes_uploaded_to_gpu = 0,
+            .mut = .{},
+        },
     };
 
-    var server = try HttpServer.HttpServer.init(allocator, &server_app_ctx);
+    var server = try HttpServer.HttpServer.init(allocator, &server_ctx);
     defer server.deinit(allocator);
 
     while ((!wnd_ctx.should_exit) and (!app_ctx.should_exit)) {
@@ -237,9 +230,9 @@ pub fn main() !void {
             }
             const upload_vertex_bytes = @sizeOf(@TypeOf(tesselator.renderable_vertices.vulkan_vertices)) * tesselator.renderable_vertices.vulkan_vertices.items.len + @sizeOf(@TypeOf(tesselator.renderable_vertices.vulkan_indices)) * tesselator.renderable_vertices.vulkan_indices.items.len;
             const upload_lines_bytes = @sizeOf(@TypeOf(tesselator.renderable_lines.vulkan_vertices)) * tesselator.renderable_lines.vulkan_vertices.items.len + @sizeOf(@TypeOf(tesselator.renderable_lines.vulkan_indices)) * tesselator.renderable_lines.vulkan_indices.items.len;
-            app_ctx.stats.mut.lock();
-            defer app_ctx.stats.mut.unlock();
-            app_ctx.stats.bytes_uploaded_to_gpu = upload_vertex_bytes + upload_lines_bytes;
+            server_ctx.stats.mut.lock();
+            defer server_ctx.stats.mut.unlock();
+            server_ctx.stats.bytes_uploaded_to_gpu = upload_vertex_bytes + upload_lines_bytes;
         }
 
         if (app_ctx.should_fetch_id_buffers) {
@@ -287,10 +280,10 @@ pub fn main() !void {
             @intCast(wnd_ctx.height),
             &app_ctx.mvp_ubo,
         );
-        const time_delta_s: f64 = @as(f64, @floatFromInt(std.time.microTimestamp() - start_time)) / @as(f64, @floatFromInt(std.time.us_per_s));
-        app_ctx.stats.mut.lock();
-        defer app_ctx.stats.mut.unlock();
-        app_ctx.stats.frametime = time_delta_s;
+        const time_delta_ms: f64 = @as(f64, @floatFromInt(std.time.microTimestamp() - start_time)) / @as(f64, @floatFromInt(std.time.us_per_ms));
+        server_ctx.stats.mut.lock();
+        defer server_ctx.stats.mut.unlock();
+        server_ctx.stats.frametime_ms = time_delta_ms;
     }
 
     std.debug.print("exited loop\n", .{});
