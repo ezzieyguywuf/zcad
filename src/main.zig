@@ -29,7 +29,7 @@ const Camera = struct {
 };
 
 const Stats = struct {
-    fps: f64,
+    frametime: f64,
     bytes_uploaded_to_gpu: u64,
     mut: std.Thread.Mutex,
 };
@@ -139,7 +139,7 @@ pub fn main() !void {
         .pointer_x = 0,
         .pointer_y = 0,
         .stats = .{
-            .fps = 0,
+            .frametime = 0,
             .bytes_uploaded_to_gpu = 0,
             .mut = .{},
         },
@@ -290,7 +290,7 @@ pub fn main() !void {
         const time_delta_s: f64 = @as(f64, @floatFromInt(std.time.microTimestamp() - start_time)) / @as(f64, @floatFromInt(std.time.us_per_s));
         app_ctx.stats.mut.lock();
         defer app_ctx.stats.mut.unlock();
-        app_ctx.stats.fps = 1 / time_delta_s;
+        app_ctx.stats.frametime = time_delta_s;
     }
 
     std.debug.print("exited loop\n", .{});
