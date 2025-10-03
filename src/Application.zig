@@ -25,13 +25,13 @@ const AppContext = struct {
 
 const Self = @This();
 
-app_ctx: AppContext,
-window_ctx: wnd.WindowingContext(*AppContext),
+app_ctx: *AppContext,
+window_ctx: *wnd.WindowingContext(*AppContext),
 vk_ctx: vkr.VulkanContext,
 
 renderer: vkr.Renderer,
 os_window: OsWindow,
-tesselator: wrld.Tesselator,
+tesselator: *wrld.Tesselator,
 tesselator_thread: std.Thread,
 id_buffers: vkr.IdBuffers,
 
@@ -39,7 +39,8 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     const eye: zm.Vec = .{ 2000, -1500, 2000, 1 };
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
     const up: zm.Vec = .{ 0, 1, 0, 0 };
-    var app_ctx = AppContext{
+    var app_ctx = try allocator.create(AppContext);
+    app_ctx.* = AppContext{
         .prev_input_state = wnd.InputState{},
         .camera = .{
             .eye = eye,
@@ -58,12 +59,13 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
         .pointer_y = 0,
     };
 
-    var window_ctx = wnd.WindowingContext(*AppContext).init(&app_ctx, InputCallback, 680, 420);
+    var window_ctx = try allocator.create(wnd.WindowingContext(*AppContext));
+    window_ctx.* = wnd.WindowingContext(*AppContext).init(app_ctx, InputCallback, 680, 420);
     var os_window = if (use_x11) OsWindow{ .xlib = try allocator.create(x11.X11Context(*AppContext)) } else OsWindow{ .wayland = try allocator.create(wl.WaylandContext(*AppContext)) };
 
     switch (os_window) {
-        .xlib => |*window| try window.*.init(&window_ctx),
-        .wayland => |*window| try window.*.init(&window_ctx),
+        .xlib => |*window| try window.*.init(window_ctx),
+        .wayland => |*window| try window.*.init(window_ctx),
     }
 
     const vk_ctx = switch (os_window) {
@@ -86,8 +88,9 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     const aspect_ratio = @as(f32, @floatFromInt(window_ctx.width)) / @as(f32, @floatFromInt(window_ctx.height));
     app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
 
-    var tesselator = wrld.Tesselator.init(world);
-    const tesselator_thread = try std.Thread.spawn(.{}, wrld.Tesselator.run, .{&tesselator});
+    const tesselator = try allocator.create(wrld.Tesselator);
+    tesselator.* = wrld.Tesselator.init(world);
+    const tesselator_thread = try std.Thread.spawn(.{}, wrld.Tesselator.run, .{tesselator});
 
     return .{
         .app_ctx = app_ctx,
@@ -101,19 +104,22 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     };
 }
 
-pub fn deinit(self: *Self, allocator: std.mem.Allocator) !void {
-    try self.renderer.swapchain.waitForAllFences(&self.vk_ctx.device);
-    try self.vk_ctx.device.deviceWaitIdle();
-
+pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     switch (self.os_window) {
         .xlib => |window| allocator.destroy(window),
         .wayland => |window| allocator.destroy(window),
     }
-    self.vk_ctx.deinit(allocator);
-    self.renderer.deinit(allocator, &self.vk_ctx);
+    allocator.destroy(self.window_ctx);
+
     self.tesselator.stop();
     self.tesselator_thread.join();
+    allocator.destroy(self.tesselator);
+
+    self.renderer.deinit(allocator, &self.vk_ctx);
+    self.vk_ctx.deinit(allocator);
+
     self.id_buffers.deinit(allocator);
+    allocator.destroy(self.app_ctx);
 }
 
 pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
@@ -121,7 +127,6 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
 
     if (self.tesselator.tessellation_ready.isSet()) {
         self.tesselator.tessellation_ready.reset();
-
         self.tesselator.mut.lock();
         defer self.tesselator.mut.unlock();
 
@@ -141,7 +146,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
         try self.id_buffers.fill(allocator, &self.renderer, &self.vk_ctx);
         const i = self.app_ctx.pointer_x + self.app_ctx.pointer_y * @as(usize, @intCast(self.window_ctx.width));
         if (i >= self.id_buffers.vertex_ids.ids.items.len) {
-            std.debug.print("index {d} bigger than len {d}\n", .{ i, self.id_buffers.vertex_ids.ids.items.len });
+            std.debug.print("ERROR: index {d} bigger than len {d}\n", .{ i, self.id_buffers.vertex_ids.ids.items.len });
         } else {
             const vertex_id = self.id_buffers.vertex_ids.ids.items[i];
             const line_id = self.id_buffers.line_ids.ids.items[i];
@@ -186,7 +191,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
 }
 
 pub fn should_loop(self: *const Self) bool {
-    return !self.window_ctx.should_exit and !self.app_ctx.should_exit;
+    return (!self.window_ctx.should_exit) and (!self.app_ctx.should_exit);
 }
 
 const OsWindow = union(wnd.WindowingType) {
@@ -196,6 +201,7 @@ const OsWindow = union(wnd.WindowingType) {
 
 pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     if (input_state.should_close) {
+        std.debug.print("InputCallback: should_close received\n", .{});
         app_ctx.should_exit = true;
         return;
     }

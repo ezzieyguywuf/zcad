@@ -96,7 +96,11 @@ pub fn WaylandContext(comptime T: type) type {
         }
 
         pub fn run(self: *WaylandContext(T)) !bool {
-            _ = self.wl_display.dispatchPending();
+            const ret = self.wl_display.dispatchPending();
+            if (ret != .SUCCESS) {
+                std.debug.print("Error with dispatchPending: {any}\n", .{ret});
+                return error.WaylandDispatchPending;
+            }
             if (self.wl_display.roundtrip() != .SUCCESS) return error.RoundTripFailed;
             if (self.wnd_ctx.width == 0 or self.wnd_ctx.height == 0) {
                 // std.debug.print("Current dimensions: width -> {d}, height -> {d}\n", .{ self.wnd_ctx.width, self.wnd_ctx.height });

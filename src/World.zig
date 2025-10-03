@@ -27,7 +27,6 @@ pub const World = struct {
     pub fn addVertex(self: *World, allocator: std.mem.Allocator, vertex: *const geom.Point) !void {
         self.mut.lock();
         defer self.mut.unlock();
-
         try self.vertices.append(allocator, vertex.*);
         self.is_dirty.set();
         self.bbox.expand(vertex);
@@ -36,7 +35,6 @@ pub const World = struct {
     pub fn addLine(self: *World, allocator: std.mem.Allocator, line: *const geom.Line) !void {
         self.mut.lock();
         defer self.mut.unlock();
-
         try self.lines.append(allocator, line.*);
         self.is_dirty.set();
         self.bbox.expand(&line.p0);
@@ -103,9 +101,6 @@ pub const Tesselator = struct {
     }
 
     pub fn stop(self: *Tesselator) void {
-        self.mut.lock();
-        defer self.mut.unlock();
-
         self.should_run.reset();
         self.should_tesselate.signal();
     }

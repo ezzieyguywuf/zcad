@@ -30,6 +30,7 @@ pub fn main() !void {
     defer world.deinit(allocator);
 
     var app = try Application.init(allocator, use_x11, &world);
+    defer app.deinit(allocator);
 
     var server_ctx = HttpServer.ServerContext{
         .world = &world,
@@ -64,6 +65,9 @@ pub fn main() !void {
         defer server_ctx.stats.mut.unlock();
         server_ctx.stats.frametime_ms = time_delta_ms;
     }
+
+    try app.renderer.swapchain.waitForAllFences(&app.vk_ctx.device);
+    try app.vk_ctx.device.deviceWaitIdle();
 }
 
 test {
