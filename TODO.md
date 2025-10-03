@@ -9,6 +9,7 @@ This file tracks planned architectural improvements and new features.
 - [ ] window decorations
 - [ ] UI elements like buttons and menus
 - [ ] headless mode
+- [ ] how to shrink bounding box?
 
 ## Architectural Refactoring
 
