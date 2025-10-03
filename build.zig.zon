@@ -14,8 +14,8 @@
             .hash = "N-V-__8AAESg9gHKzlANbo03d4Fcb5m_5aZXJXIhYbWzCe4G",
         },
         .httpz = .{
-            .url = "https://github.com/karlseguin/http.zig/archive/94fc151741af0f8b6962966046743c0726b1ec35.tar.gz",
-            .hash = "httpz-0.0.0-PNVzrFe5BgDabt7p2mEiv4PXNOZxJvxR0cMOBtQmP3uR",
+            .url = "https://github.com/karlseguin/http.zig/archive/fff50308d4ebf5734c0e2c97ef5d9c087ad0745c.tar.gz",
+            .hash = "httpz-0.0.0-PNVzrCbdBgDnIh_TAkLz9Z7P7B3gvC_z3x1j0YZk1b41",
         },
         .zmath = .{
             .url = "https://github.com/zig-gamedev/zmath/archive/3a5955b2b72cd081563fbb084eff05bffd1e3fbb.tar.gz",
