@@ -1,14 +1,6 @@
 const std = @import("std");
-const wl = @import("WaylandContext.zig");
-const vkr = @import("VulkanRenderer.zig");
-const wnd = @import("WindowingContext.zig");
-const x11 = @import("X11Context.zig");
-const vk = @import("vulkan");
-const zm = @import("zmath");
-const rndr = @import("Renderables.zig");
-const geom = @import("Geometry.zig");
 const HttpServer = @import("HttpServer.zig");
-const wrld = @import("World.zig");
+const World = @import("World.zig").World;
 const Application = @import("Application.zig");
 
 pub fn main() !void {
@@ -45,7 +37,7 @@ pub fn main() !void {
         }
     }
 
-    var world = wrld.World.init();
+    var world = World.init();
     defer world.deinit(allocator);
 
     var app = try Application.init(allocator, use_x11, &world);
