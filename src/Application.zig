@@ -253,3 +253,20 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     app_ctx.prev_input_state.vertical_scroll = 0;
     app_ctx.prev_input_state.horizontal_scroll = 0;
 }
+
+// TODO: enable this once we have a headless thing.
+// test "Application lifecycle" {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     defer _ = gpa.deinit();
+//     const allocator = gpa.allocator();
+
+//     var world = wrld.World.init();
+//     defer world.deinit(allocator);
+
+//     var app = try Self.init(allocator, false, &world);
+
+//     // Tick once to ensure no crashes on first frame.
+//     _ = try app.tick(allocator);
+
+//     try app.deinit(allocator);
+// }

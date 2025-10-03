@@ -8,6 +8,7 @@ This file tracks planned architectural improvements and new features.
 - [ ] Flesh out X11 renderer
 - [ ] window decorations
 - [ ] UI elements like buttons and menus
+- [ ] headless mode
 
 ## Architectural Refactoring
 
