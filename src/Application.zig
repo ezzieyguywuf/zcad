@@ -88,7 +88,6 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
 
     var tesselator = wrld.Tesselator.init(world);
     const tesselator_thread = try std.Thread.spawn(.{}, wrld.Tesselator.run, .{&tesselator});
-    defer {}
 
     return .{
         .app_ctx = app_ctx,
@@ -102,7 +101,7 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     };
 }
 
-pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+pub fn deinit(self: *Self, allocator: std.mem.Allocator) !void {
     try self.renderer.swapchain.waitForAllFences(&self.vk_ctx.device);
     try self.vk_ctx.device.deviceWaitIdle();
 
@@ -218,10 +217,8 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
             app_ctx.should_fetch_id_buffers = true;
             app_ctx.pointer_x = @intFromFloat(input_state.pointer_x);
             app_ctx.pointer_y = @intFromFloat(input_state.pointer_y);
-            // std.debug.print("clicked, x: {d}, y: {d}\n", .{ x_pos, y_pos });
         }
         if (input_state.left_button) {
-            // TODO rotation around focus_point
             const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
             const angle_x = delta_radians * delta_x;
             const rotate_x = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle_x));
@@ -234,8 +231,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
             app_ctx.camera.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.up));
             app_ctx.camera.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.eye));
         }
-        if (input_state.right_button and !app_ctx.prev_input_state.right_button) {}
-        if (input_state.middle_button and !app_ctx.prev_input_state.middle_button) {}
     }
 
     if (total_horizontal_scroll != 0) {
