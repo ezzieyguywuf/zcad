@@ -2,6 +2,13 @@
 
 This file tracks planned architectural improvements and new features.
 
+## Misc
+
+- [ ] Do real logging, stop sprinkling std.debug.print all over the place
+- [ ] Flesh out X11 renderer
+- [ ] window decorations
+- [ ] UI elements like buttons and menus
+
 ## Architectural Refactoring
 
 - [x] Minimize logic in `main.zig` to improve testability and reduce the chance
@@ -13,6 +20,8 @@ This file tracks planned architectural improvements and new features.
   system like Protocol Buffers for more robust and extensible communication.
 - [ ] Figure out where it makes the most sense to put World and Tesselator:
   `World.World` doesn't feel right
+- [ ] support windows and macos with vulkan renderer
+- [ ] maybe D3D12 and Metal renderers for window/mac respectively
 
 ## B-Rep Modeling
 
