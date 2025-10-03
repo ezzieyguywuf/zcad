@@ -34,8 +34,8 @@ pub const HttpServer = struct {
         // TODO: Re-examine if GET is the right verb for this endpoint.
         // It modifies server-side state, so POST might be more appropriate,
         // but this requires fixing the test client's handling of bodiless POST requests.
-        router.get("/lines", handlePostLines, .{});
-        router.get("/vertices", handlePostVertices, .{});
+        router.get("/lines", handleGetLines, .{});
+        router.get("/vertices", handleGetVertices, .{});
 
         const thread = try server.listenInNewThread();
         std.debug.print("Server listening on port 4042\n", .{});
@@ -126,7 +126,7 @@ fn parsePoint(point_str: []const u8) ParsePointError!geom.Point {
     return geom.Point{ .x = coords[0], .y = coords[1], .z = coords[2] };
 }
 
-fn handlePostLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
+fn handleGetLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
     const query = req.query() catch |err| {
         std.debug.print("Failed to parse query string: {any}\n", .{err});
         res.status = 400;
@@ -182,7 +182,7 @@ fn handlePostLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.
     try res.writer().writeByte('\n');
 }
 
-fn handlePostVertices(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
+fn handleGetVertices(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
     const query = req.query() catch |err| {
         std.debug.print("Failed to parse query string: {any}\n", .{err});
         res.status = 400;
