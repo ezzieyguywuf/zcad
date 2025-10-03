@@ -46,15 +46,11 @@ pub fn main() !void {
     var server = try HttpServer.HttpServer.init(allocator, &server_ctx);
     defer server.deinit(allocator);
 
-    var last_uploaded_bytes: usize = 0;
-
     while (app.should_loop()) {
         const start_time = std.time.microTimestamp();
 
         const uploaded_bytes = try app.tick(allocator);
         if (uploaded_bytes) |bytes| {
-            last_uploaded_bytes = bytes;
-
             server_ctx.stats.mut.lock();
             defer server_ctx.stats.mut.unlock();
             server_ctx.stats.bytes_uploaded_to_gpu = bytes;
