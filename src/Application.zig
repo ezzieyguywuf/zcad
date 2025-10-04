@@ -6,7 +6,7 @@ const x11 = @import("X11Context.zig");
 const wl = @import("WaylandContext.zig");
 const wrld = @import("World.zig");
 
-const Camera = struct {
+pub const Camera = struct {
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,

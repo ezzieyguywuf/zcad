@@ -3,10 +3,13 @@ const httpz = @import("httpz");
 const geom = @import("Geometry.zig");
 const World = @import("World.zig").World;
 const testing = std.testing;
+const app = @import("Application.zig");
+const zm = @import("zmath");
 
 // Context to be passed to HTTP handlers, containing application state
 pub const ServerContext = struct {
     world: *World,
+    camera: *app.Camera,
     allocator: std.mem.Allocator, // Main application's allocator
     tessellation_cond: *std.Thread.Condition,
     stats: Stats,
@@ -62,6 +65,48 @@ const Stats = struct {
     bytes_uploaded_to_gpu: u64,
     mut: std.Thread.Mutex,
 };
+
+// Represents the expected JSON structure for the /moveCamera endpoint.
+const MoveCameraPayload = struct {
+    pan: ?[3]f32 = null,
+    pitch_rads: ?f32 = null,
+    yaw_rads: ?f32 = null,
+};
+
+fn handleMoveCamera(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
+    const body = req.body() orelse {
+        res.status = 400;
+        try res.json(.{ .@"error" = "Failed to read request body" }, .{});
+        return;
+    };
+
+    const payload = std.json.parseFromSlice(MoveCameraPayload, server_ctx.allocator, body, .{}) catch {
+        res.status = 400;
+        try res.json(.{ .@"error" = "Failed to parse JSON payload. Expected fields: pan: ?[f32,f32,f32], pitch_rads: ?f32, yaw_rads: ?f32" }, .{});
+        return;
+    };
+    defer payload.deinit();
+
+    if (payload.value.pan) |pan_slice| {
+        const pan_vec: zm.Vec = .{ pan_slice[0], pan_slice[1], pan_slice[2], 0 };
+        server_ctx.camera.pan(pan_vec);
+    }
+
+    if (payload.value.pitch_rads != null or payload.value.yaw_rads != null) {
+        const pitch = payload.value.pitch_rads orelse 0.0;
+        const yaw = payload.value.yaw_rads orelse 0.0;
+        server_ctx.camera.rotate(pitch, yaw);
+    }
+
+    if (!(payload.value.pan == null or payload.value.pitch_rads == null or payload.value.yaw_rads == null)) {
+        res.status = 400;
+        try res.json(.{ .@"error" = "At least one of pan, pitch, or yaw must be provided." }, .{});
+        return;
+    }
+
+    res.status = 200;
+    try res.json(.{ .message = "Camera move command processed" }, .{});
+}
 
 fn trimMutField(T: type) type {
     const T_info = @typeInfo(T).@"struct";
@@ -226,6 +271,12 @@ test "Add vertex via /vertices endpoint" {
     defer world_storage.deinit(allocator);
     var tessellation_cond = std.Thread.Condition{};
 
+    var camera = app.Camera{
+        .eye = .{ 0, 0, 0, 0 },
+        .focus_point = .{ 0, 0, 0, 0 },
+        .up = .{ 0, 0, 0, 0 },
+        .mut = .{},
+    };
     var server_ctx = ServerContext{
         .world = &world_storage,
         .allocator = allocator,
@@ -235,6 +286,7 @@ test "Add vertex via /vertices endpoint" {
             .bytes_uploaded_to_gpu = 0,
             .mut = .{},
         },
+        .camera = &camera,
     };
 
     // Initialize HttpServer (in a separate thread)
