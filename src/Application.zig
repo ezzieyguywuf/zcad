@@ -11,6 +11,38 @@ const Camera = struct {
     focus_point: zm.Vec,
     up: zm.Vec,
     mut: std.Thread.Mutex,
+
+    pub fn pan(self: *Camera, amt: zm.Vec) void {
+        self.mut.lock();
+        defer self.mut.unlock();
+
+        self.eye += amt;
+        self.focus_point += amt;
+
+        return;
+    }
+
+    pub fn rotate(self: *Camera, pitch_rads: f32, yaw_rads: f32) void {
+        self.mut.lock();
+        defer self.mut.unlock();
+
+        const yaw_quat = zm.quatFromAxisAngle(self.up, yaw_rads);
+
+        const look_vec = self.focus_point - self.eye;
+        const look_dir = zm.normalize3(look_vec);
+        const pitch_axis = zm.normalize3(zm.cross3(look_dir, self.up));
+        const pitch_quat = zm.quatFromAxisAngle(pitch_axis, pitch_rads);
+
+        const rot_quat = zm.qmul(pitch_quat, yaw_quat);
+
+        // rotate the look vector then subtract from the focus_point to
+        // calculate the new eye
+        const new_look_vec = zm.rotate(rot_quat, look_vec);
+        self.eye = self.focus_point - new_look_vec;
+
+        // just rotate up
+        self.up = zm.rotate(rot_quat, self.up);
+    }
 };
 
 const AppContext = struct {
@@ -226,16 +258,17 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
         }
         if (input_state.left_button) {
             const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
-            const angle_x = delta_radians * delta_x;
-            const rotate_x = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle_x));
+            const yaw_rads = delta_radians * delta_x;
 
             const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
-            const angle_y = delta_radians * delta_y;
-            const axis = zm.cross3(app_ctx.camera.eye, app_ctx.camera.up);
-            const rotate_y = zm.matFromAxisAngle(axis, @floatCast(angle_y));
+            const pitch_rads = delta_radians * delta_y;
 
-            app_ctx.camera.up = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.up));
-            app_ctx.camera.eye = zm.mul(rotate_y, zm.mul(rotate_x, app_ctx.camera.eye));
+            // TODO: this is sloppy (note we already have an outer lock, so we
+            // unlock since rotate locks but then relock for the outer context
+            // :facepalm:
+            app_ctx.camera.mut.unlock();
+            app_ctx.camera.rotate(@floatCast(pitch_rads), @floatCast(-yaw_rads));
+            app_ctx.camera.mut.lock();
         }
     }
 
