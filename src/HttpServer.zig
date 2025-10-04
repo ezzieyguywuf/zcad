@@ -77,13 +77,13 @@ const MoveCameraPayload = struct {
 fn handleMoveCamera(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
     const body = req.body() orelse {
         res.status = 400;
-        try res.json(.{ .@"error" = "Failed to read request body" }, .{});
+        try addTrailingNewline(res, .{ .@"error" = "Failed to read request body" });
         return;
     };
 
     const payload = std.json.parseFromSlice(MoveCameraPayload, server_ctx.allocator, body, .{}) catch {
         res.status = 400;
-        try res.json(.{ .@"error" = "Failed to parse JSON payload. Expected fields: pan: ?[f32,f32,f32], pitch_rads: ?f32, yaw_rads: ?f32" }, .{});
+        try addTrailingNewline(res, .{ .@"error" = "Failed to parse JSON payload. Expected fields: pan: ?[f32,f32,f32], pitch_rads: ?f32, yaw_rads: ?f32" });
         return;
     };
     defer payload.deinit();
@@ -99,14 +99,14 @@ fn handleMoveCamera(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz
         server_ctx.camera.rotate(pitch, yaw);
     }
 
-    if (!(payload.value.pan == null or payload.value.pitch_rads == null or payload.value.yaw_rads == null)) {
+    if (payload.value.pan == null and payload.value.pitch_rads == null and payload.value.yaw_rads == null) {
         res.status = 400;
-        try res.json(.{ .@"error" = "At least one of pan, pitch, or yaw must be provided." }, .{});
+        try addTrailingNewline(res, .{ .@"error" = "At least one of pan, pitch, or yaw must be provided." });
         return;
     }
 
     res.status = 200;
-    try res.json(.{ .message = "Camera move command processed" }, .{});
+    try addTrailingNewline(res, .{ .message = "Camera move command processed" });
 }
 
 fn trimMutField(T: type) type {
@@ -145,8 +145,7 @@ fn handleGetStats(server_context: *ServerContext, _: *httpz.Request, res: *httpz
     const fps = 1 / (stats_no_mut.frametime_ms / std.time.ms_per_s);
 
     res.status = 200;
-    try res.json(.{ .fps = fps, .raw = stats_no_mut }, .{});
-    try res.writer().writeByte('\n');
+    try addTrailingNewline(res, .{ .fps = fps, .raw = stats_no_mut });
 }
 
 const ParsePointError = error{
@@ -176,92 +175,88 @@ fn handleGetLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.R
     const query = req.query() catch |err| {
         std.debug.print("Failed to parse query string: {any}\n", .{err});
         res.status = 400;
-        try res.json(.{ .err = "Failed to parse query string" }, .{});
+        try addTrailingNewline(res, .{ .err = "Failed to parse query string" });
         return;
     };
 
     const p0_str = query.get("p0") orelse {
         res.status = 400;
-        try res.json(.{ .err = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" }, .{});
+        try addTrailingNewline(res, .{ .err = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" });
         return;
     };
 
     const p1_str = query.get("p1") orelse {
         res.status = 400;
-        try res.json(.{ .err = "Missing query parameter p1 (e.g., p1=x2,y2,z2)" }, .{});
+        try addTrailingNewline(res, .{ .err = "Missing query parameter p1 (e.g., p1=x2,y2,z2)" });
         return;
     };
 
     const p0 = parsePoint(p0_str) catch |err| {
         std.debug.print("Failed to parse p0 '{s}': {any}\n", .{ p0_str, err });
         res.status = 400;
-        try res.json(.{ .err = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) }, .{});
+        try addTrailingNewline(res, .{ .err = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) });
         return;
     };
 
     const p1 = parsePoint(p1_str) catch |err| {
         std.debug.print("Failed to parse p1 '{s}': {any}\n", .{ p1_str, err });
         res.status = 400;
-        try res.json(.{ .err = "Invalid format for p1. Expected x,y,z", .details = @errorName(err) }, .{});
+        try addTrailingNewline(res, .{ .err = "Invalid format for p1. Expected x,y,z", .details = @errorName(err) });
         return;
     };
 
     const new_line = geom.Line.init(p0, p1) catch |err| {
         std.debug.print("Failed to initialize line from p0={any} to p1={any}: {any}\n", .{ p0, p1, err });
         res.status = 400;
-        try res.json(.{ .err = "Failed to create line", .details = @errorName(err) }, .{});
+        try addTrailingNewline(res, .{ .err = "Failed to create line", .details = @errorName(err) });
         return;
     };
 
     server_ctx.world.addLine(server_ctx.allocator, &new_line) catch |err| {
         std.debug.print("HTTP Server: Error adding line to World: {any}\n", .{err});
         res.status = 500;
-        try res.json(.{ .err = "Failed to add line to internal storage" }, .{});
+        try addTrailingNewline(res, .{ .err = "Failed to add line to internal storage" });
         return;
     };
 
     server_ctx.tessellation_cond.signal();
 
     res.status = 200;
-    try res.json(.{ .message = "Line added successfully", .p0 = p0, .p1 = p1 }, .{});
-    // trailing newline in response makes e.g. command-line interactions nicer.
-    try res.writer().writeByte('\n');
+    try addTrailingNewline(res, .{ .message = "Line added successfully", .p0 = p0, .p1 = p1 });
 }
 
 fn handleGetVertices(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
     const query = req.query() catch |err| {
         std.debug.print("Failed to parse query string: {any}\n", .{err});
         res.status = 400;
-        try res.json(.{ .err = "Failed to parse query string" }, .{});
+        try addTrailingNewline(res, .{ .err = "Failed to parse query string" });
         return;
     };
 
     const p0_str = query.get("p0") orelse {
         res.status = 400;
-        try res.json(.{ .err = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" }, .{});
+        try addTrailingNewline(res, .{ .err = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" });
         return;
     };
 
     const p0 = parsePoint(p0_str) catch |err| {
         std.debug.print("Failed to parse p0 '{s}': {any}\n", .{ p0_str, err });
         res.status = 400;
-        try res.json(.{ .err = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) }, .{});
+        try addTrailingNewline(res, .{ .err = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) });
         return;
     };
 
     server_ctx.world.addVertex(server_ctx.allocator, &p0) catch |err| {
         std.debug.print("HTTP Server: Error adding vertex to World: {any}\n", .{err});
         res.status = 500;
-        try res.json(.{ .err = "Failed to add vertex to internal storage" }, .{});
+        try addTrailingNewline(res, .{ .err = "Failed to add vertex to internal storage" });
         return;
     };
 
     server_ctx.tessellation_cond.signal();
 
     res.status = 200;
-    try res.json(.{ .message = "Vertex added successfully", .p0 = p0 }, .{});
-    // trailing newline in response makes e.g. command-line interactions nicer.
-    try res.writer().writeByte('\n');
+    try addTrailingNewline(res, .{ .message = "Vertex added successfully", .p0 = p0 });
 }
 
 test "Add vertex via /vertices endpoint" {
@@ -307,4 +302,11 @@ test "Add vertex via /vertices endpoint" {
     // Assert success
     try std.testing.expectEqual(std.http.Status.ok, fetch_result.status);
     try std.testing.expectEqual(@as(usize, 1), world_storage.vertices.items.len);
+}
+
+// Without a trailing newrline, e.g. if you curl your prompt ends up on the same
+// line as the response
+fn addTrailingNewline(res: *httpz.Response, json: anytype) !void {
+    try res.json(json, .{});
+    try res.writer().writeByte('\n');
 }
