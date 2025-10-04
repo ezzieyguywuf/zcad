@@ -14,7 +14,7 @@ The `/moveCamera` endpoint allows you to move the camera at-will using e.g. `cur
 
 <details>
   <summary> old demos </summary>
-  
+
 Added faces and vertices as renderables - each with real mouse picking cpu-side.
 
 https://github.com/user-attachments/assets/c2c1121b-57d6-4758-b99c-785caffa031e

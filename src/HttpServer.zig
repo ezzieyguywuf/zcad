@@ -34,6 +34,7 @@ pub const HttpServer = struct {
         var router = try server.router(.{});
 
         router.get("/stats", handleGetStats, .{});
+        router.post("/moveCamera", handleMoveCamera, .{});
         // TODO: Re-examine if GET is the right verb for this endpoint.
         // It modifies server-side state, so POST might be more appropriate,
         // but this requires fixing the test client's handling of bodiless POST requests.
