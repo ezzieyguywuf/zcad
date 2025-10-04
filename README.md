@@ -8,12 +8,16 @@ very much WIP. Currently I can render a few things (see demo).
 
 # demo
 
-Added faces and vertices as renderables - each with real mouse picking cpu-side.
+The `/moveCamera` endpoint allows you to move the camera at-will using e.g. `curl`
 
-https://github.com/user-attachments/assets/c2c1121b-57d6-4758-b99c-785caffa031e
+[Kooha-2025-10-03-21-10-55.webm](https://github.com/user-attachments/assets/224fe7be-c7b6-4df5-abb0-63796baef71a)
 
 <details>
   <summary> old demos </summary>
+  
+Added faces and vertices as renderables - each with real mouse picking cpu-side.
+
+https://github.com/user-attachments/assets/c2c1121b-57d6-4758-b99c-785caffa031e
 
 Real mouse picking: each line gets a UID cpu-side. These UIDs are passed along to the GPU. The GPU
 writes these UIDs to a separate buffer, one UID for each pixel. Finally, that buffer is read back
