@@ -5,11 +5,13 @@ const World = @import("World.zig").World;
 const testing = std.testing;
 const app = @import("Application.zig");
 const zm = @import("zmath");
+const wnd = @import("WindowingContext.zig");
 
 // Context to be passed to HTTP handlers, containing application state
 pub const ServerContext = struct {
     world: *World,
     camera: *app.Camera,
+    window_ctx: *wnd.WindowingContext(*app.AppContext),
     allocator: std.mem.Allocator, // Main application's allocator
     tessellation_cond: *std.Thread.Condition,
     stats: Stats,
@@ -35,6 +37,7 @@ pub const HttpServer = struct {
 
         router.get("/stats", handleGetStats, .{});
         router.post("/moveCamera", handleMoveCamera, .{});
+        router.post("/zoomToFit", handleZoomToFit, .{});
         // TODO: Re-examine if GET is the right verb for this endpoint.
         // It modifies server-side state, so POST might be more appropriate,
         // but this requires fixing the test client's handling of bodiless POST requests.
@@ -73,6 +76,24 @@ const MoveCameraPayload = struct {
     pitch_rads: ?f32 = null,
     yaw_rads: ?f32 = null,
 };
+
+fn handleZoomToFit(server_ctx: *ServerContext, _: *httpz.Request, res: *httpz.Response) !void {
+    server_ctx.world.mut.lock();
+    const bbox = server_ctx.world.bbox;
+    const fov_rads = server_ctx.world.fov_rads;
+    server_ctx.world.mut.unlock();
+
+    const aspect_ratio = @as(f32, @floatFromInt(server_ctx.window_ctx.width)) / @as(f32, @floatFromInt(server_ctx.window_ctx.height));
+
+    server_ctx.camera.zoomToFit(bbox, fov_rads, aspect_ratio) catch |err| {
+        res.status = 500;
+        try addTrailingNewline(res, .{ .@"error" = "Failed to zoom to fit", .details = @errorName(err) });
+        return;
+    };
+
+    res.status = 200;
+    try addTrailingNewline(res, .{ .message = "Zoom to fit successful" });
+}
 
 fn handleMoveCamera(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
     const body = req.body() orelse {
@@ -273,6 +294,21 @@ test "Add vertex via /vertices endpoint" {
         .up = .{ 0, 0, 0, 0 },
         .mut = .{},
     };
+    var app_ctx = app.AppContext{
+        .prev_input_state = wnd.InputState{},
+        .camera = camera,
+        .mvp_ubo = .{
+            .model = zm.identity(),
+            .view = zm.lookAtRh(camera.eye, camera.focus_point, camera.up),
+            .projection = zm.perspectiveFovRh(world_storage.fov_rads, 1.0, 0.1, 10000.0),
+        },
+        .should_exit = false,
+        .should_fetch_id_buffers = false,
+        .pointer_x = 0,
+        .pointer_y = 0,
+    };
+    var window_ctx = wnd.WindowingContext(*app.AppContext).init(&app_ctx, undefined, 680, 420);
+
     var server_ctx = ServerContext{
         .world = &world_storage,
         .allocator = allocator,
@@ -283,6 +319,7 @@ test "Add vertex via /vertices endpoint" {
             .mut = .{},
         },
         .camera = &camera,
+        .window_ctx = &window_ctx,
     };
 
     // Initialize HttpServer (in a separate thread)

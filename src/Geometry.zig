@@ -13,7 +13,26 @@ pub const Point = struct {
     z: i64,
 
     pub fn Equals(self: Point, other: Point) bool {
-        return self.x == other.x and self.y == other.y and self.z == other.z;
+        const v1 = Vector.FromPoint(self);
+        const v2 = Vector.FromPoint(other);
+        return v1.Equals(v2);
+    }
+
+    pub fn Plus(self: Point, other: Point) Point {
+        const v1 = Vector.FromPoint(self);
+        const v2 = Vector.FromPoint(other);
+        return v1.Plus(v2).ToPoint();
+    }
+
+    pub fn Minus(self: Point, other: Point) Point {
+        const v1 = Vector.FromPoint(self);
+        const v2 = Vector.FromPoint(other);
+        return v1.Minus(v2).ToPoint();
+    }
+
+    pub fn Div(self: Point, amt: i64) !Point {
+        const v1 = Vector.FromPoint(self);
+        return try v1.Divide(amt);
     }
 };
 
@@ -32,10 +51,18 @@ pub const Vector = struct {
     dz: i64,
 
     pub fn FromPoint(point: Point) Vector {
-        return Vector{
+        return .{
             .dx = point.x,
             .dy = point.y,
             .dz = point.z,
+        };
+    }
+
+    pub fn ToPoint(self: Vector) Point {
+        return .{
+            .x = self.dx,
+            .y = self.dy,
+            .z = self.dz,
         };
     }
 
@@ -64,6 +91,18 @@ pub const Vector = struct {
             .dx = self.dx * amt,
             .dy = self.dy * amt,
             .dz = self.dz * amt,
+        };
+    }
+
+    pub fn Divide(self: Vector, amt: i64) !Vector {
+        if (amt == 0) {
+            return error.DivByZero;
+        }
+
+        return Vector{
+            .dx = @divTrunc(self.dx, amt),
+            .dy = @divTrunc(self.dy, amt),
+            .dz = @divTrunc(self.dz, amt),
         };
     }
 
@@ -154,9 +193,9 @@ pub const Line = struct {
     // line defined by p0 and p1. It does not consider the line segment's endpoints.
     pub fn DistanceToPoint(self: Line, other: Point) i64 {
         // v0 represents the vector from self.p0 to self.p1 (analogous to x2 - x1 in some formula notations)
-        const v0 = Vector.FromPoint(self.p1).Minus(Vector.FromPoint(self.p0));
+        const v0 = Vector.FromPoint(self.p1.Minus(self.p0));
         // v_p0_other represents the vector from self.p0 to the point 'other' (analogous to x0 - x1 in some formula notations)
-        const v_p0_other = Vector.FromPoint(self.p0).Minus(Vector.FromPoint(other));
+        const v_p0_other = Vector.FromPoint(self.p0.Minus(other));
 
         const numerator = v0.Cross(v_p0_other).SquaredMagnitude();
         const denominator = v0.SquaredMagnitude();

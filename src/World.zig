@@ -8,6 +8,7 @@ pub const World = struct {
     bbox: geom.BoundingBox,
     is_dirty: std.Thread.ResetEvent,
     mut: std.Thread.Mutex,
+    fov_rads: f32,
 
     pub fn init() World {
         return World{
@@ -16,6 +17,7 @@ pub const World = struct {
             .bbox = geom.BoundingBox.init(),
             .is_dirty = .{},
             .mut = .{},
+            .fov_rads = std.math.pi / 4.0,
         };
     }
 

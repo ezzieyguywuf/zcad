@@ -5,12 +5,30 @@ const zm = @import("zmath");
 const x11 = @import("X11Context.zig");
 const wl = @import("WaylandContext.zig");
 const wrld = @import("World.zig");
+const geom = @import("Geometry.zig");
 
 pub const Camera = struct {
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
     mut: std.Thread.Mutex,
+
+    pub fn zoom(self: *Camera, amount: f32) void {
+        self.mut.lock();
+        defer self.mut.unlock();
+
+        const look_vec = self.focus_point - self.eye;
+        const distance = zm.length3(look_vec)[0];
+        const look_dir = zm.normalize3(look_vec);
+
+        // If the user tries to zoom in by an amount greater than the current
+        // distance, we cap the zoom amount to just shy of the focus point.
+        // TODO limit zoom based on colliding with a solid, not this.
+        const min_dist = 0.1;
+        const zoom_amount = if (amount > distance - min_dist) distance - min_dist else amount;
+
+        self.eye += look_dir * @as(zm.Vec, @splat(zoom_amount));
+    }
 
     pub fn pan(self: *Camera, amt: zm.Vec) void {
         self.mut.lock();
@@ -43,9 +61,31 @@ pub const Camera = struct {
         // just rotate up
         self.up = zm.rotate(rot_quat, self.up);
     }
+
+    pub fn zoomToFit(self: *Camera, bb: geom.BoundingBox, fov_rads: f32, aspect_ratio: f32) !void {
+        // If the bounding box min is still at maxInt, it's uninitialized.
+        if (bb.min.x == std.math.maxInt(i64)) {
+            return;
+        }
+
+        const diagonal = geom.Vector.FromPoint(bb.max.Minus(bb.min));
+        const radius = std.math.sqrt(@as(f32, @floatFromInt(diagonal.SquaredMagnitude()))) / 2.0;
+        const mult = if (aspect_ratio >= 1) 1 else aspect_ratio;
+        const distance = radius / (std.math.tan(fov_rads / 2.0) * mult) * 1.10; // 10% padding
+
+        // Convert center to f32 vector for camera focus
+        const center = try geom.Vector.FromPoint(bb.min.Plus(bb.max)).Divide(2);
+        const new_focus_point = zm.Vec{ @as(f32, @floatFromInt(center.dx)), @as(f32, @floatFromInt(center.dy)), @as(f32, @floatFromInt(center.dz)), 1.0 };
+        std.debug.print("bbox: {any}, center: {any}, focus: {any}, new_focus: {any}\n", .{ bb, center, self.focus_point, new_focus_point });
+
+        // Set the new camera state.
+        const current_distance = zm.length3(self.focus_point - self.eye)[0];
+        self.pan(new_focus_point - self.focus_point);
+        self.zoom(current_distance - distance);
+    }
 };
 
-const AppContext = struct {
+pub const AppContext = struct {
     prev_input_state: wnd.InputState,
     camera: Camera,
     mvp_ubo: vkr.MVPUniformBufferObject,
@@ -83,7 +123,7 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), 1.0, 0.1, 10000.0),
+            .projection = zm.perspectiveFovRh(world.fov_rads, 1.0, 0.1, 10000.0),
         },
         .should_exit = false,
         .should_fetch_id_buffers = false,
@@ -198,7 +238,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
 
     if (self.window_ctx.should_resize) {
         const aspect_ratio = @as(f32, @floatFromInt(self.window_ctx.width)) / @as(f32, @floatFromInt(self.window_ctx.height));
-        self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 10000.0);
+        self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(self.tesselator.world.fov_rads, aspect_ratio, 0.1, 10000.0);
         self.window_ctx.resizing_done = true;
     }
 
@@ -241,34 +281,25 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
 
     app_ctx.camera.mut.lock();
-    defer app_ctx.camera.mut.unlock();
     const dir_long = app_ctx.camera.focus_point - app_ctx.camera.eye;
-    const dir = zm.normalize3(dir_long);
-    const dir_len = zm.length3(dir_long)[0];
-
-    const delta_eye = @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
-    const delta_eye_len = zm.length3(delta_eye)[0];
+    app_ctx.camera.mut.unlock();
     const delta_radians = std.math.pi / @as(f64, @floatCast(368));
 
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
         if (input_state.left_button == false and app_ctx.prev_input_state.left_button == true) {
             app_ctx.should_fetch_id_buffers = true;
-            app_ctx.pointer_x = @intFromFloat(input_state.pointer_x);
-            app_ctx.pointer_y = @intFromFloat(input_state.pointer_y);
+            // take the max since sometimes the pointer is negative
+            app_ctx.pointer_x = @intFromFloat(@max(0, input_state.pointer_x));
+            app_ctx.pointer_y = @intFromFloat(@max(0, input_state.pointer_y));
         }
         if (input_state.left_button) {
             const delta_x = input_state.pointer_x - app_ctx.prev_input_state.pointer_x;
-            const yaw_rads = delta_radians * delta_x;
+            const yaw_rads: f32 = @floatCast(delta_radians * delta_x);
 
             const delta_y = input_state.pointer_y - app_ctx.prev_input_state.pointer_y;
-            const pitch_rads = delta_radians * delta_y;
+            const pitch_rads: f32 = @floatCast(delta_radians * delta_y);
 
-            // TODO: this is sloppy (note we already have an outer lock, so we
-            // unlock since rotate locks but then relock for the outer context
-            // :facepalm:
-            app_ctx.camera.mut.unlock();
-            app_ctx.camera.rotate(@floatCast(pitch_rads), @floatCast(-yaw_rads));
-            app_ctx.camera.mut.lock();
+            app_ctx.camera.rotate(pitch_rads, -yaw_rads);
         }
     }
 
@@ -276,11 +307,14 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
         const angle = delta_radians * total_horizontal_scroll;
         const rotate = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle));
         const new_dir_long = zm.mul(rotate, dir_long);
+
+        app_ctx.camera.mut.lock();
         app_ctx.camera.focus_point = app_ctx.camera.eye + new_dir_long;
+        app_ctx.camera.mut.unlock();
     }
 
-    if (total_vertical_scroll < 0 or dir_len > delta_eye_len) {
-        app_ctx.camera.eye += @as(zm.Vec, @splat(@floatCast(total_vertical_scroll))) * dir;
+    if (total_vertical_scroll != 0) {
+        app_ctx.camera.zoom(@floatCast(total_vertical_scroll));
     }
 
     app_ctx.prev_input_state = input_state;

@@ -10,6 +10,15 @@ This file tracks planned architectural improvements and new features.
 - [ ] UI elements like buttons and menus
 - [ ] headless mode
 - [ ] how to shrink bounding box?
+- [ ] limit zooming based on collision with a solid.
+- [ ] finish fleshing out the "unitless" approach - we store our data as i64 to
+  try to maximize precision. we convert to float when we upload to the GPU.
+  currently, this conversion loses all our precision: we force ourselves to
+  use high integer values for high precision, which is fine ,but then
+  convert them to big floats, which have lower precision than lil floats.
+  Instead, we should store a conversion constant (e.g. if 1000 "units"
+  equals "1", we store that somewhere) so that we can divide and _then_
+  convert to float
 
 ## Architectural Refactoring
 
@@ -28,7 +37,11 @@ This file tracks planned architectural improvements and new features.
 ## B-Rep Modeling
 
 - [ ] Define a `Surface` geometric primitive.
+
 - [ ] Implement the core B-rep topological entities (`Face`, `Edge`, `Vertex`,
   `Loop`, etc.) and link them to their corresponding geometry.
+
 - [ ] Implement `World.removeGeometry` and a robust method for recalculating the
   scene's bounding box after deletions.
+
+- [ ] Make `window_ctx` in `HttpServer.ServerContext` optional (`?*WindowingContext`) to support headless mode where no window exists.
