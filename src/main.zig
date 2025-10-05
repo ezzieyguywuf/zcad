@@ -56,9 +56,7 @@ pub fn main() !void {
             world.mut.lock();
             defer world.mut.unlock();
 
-            const old_far = world.far_plane;
             world.far_plane = app.app_ctx.camera.farPlane(world.bbox);
-            std.debug.print("old_far: {d:.3}, new_far: {d:.3}\n", .{ old_far, world.far_plane });
         }
 
         const uploaded_bytes = try app.tick(allocator);
