@@ -275,6 +275,8 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
     if (should_render) {
         self.app_ctx.camera.mut.lock();
         self.app_ctx.mvp_ubo.view = zm.lookAtRh(self.app_ctx.camera.eye, self.app_ctx.camera.focus_point, self.app_ctx.camera.up);
+        const aspect_ratio = @as(f32, @floatFromInt(self.window_ctx.width)) / @as(f32, @floatFromInt(self.window_ctx.height));
+        self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(self.tesselator.world.fov_rads, aspect_ratio, self.tesselator.world.near_plane, self.tesselator.world.far_plane);
         self.app_ctx.camera.mut.unlock();
         try self.renderer.render(
             allocator,
