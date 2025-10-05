@@ -51,6 +51,16 @@ pub fn main() !void {
     while (app.should_loop()) {
         const start_time = std.time.microTimestamp();
 
+        if (app.app_ctx.camera.zoom_changed.isSet()) {
+            app.app_ctx.camera.zoom_changed.reset();
+            world.mut.lock();
+            defer world.mut.unlock();
+
+            const old_far = world.far_plane;
+            world.far_plane = app.app_ctx.camera.farPlane(world.bbox);
+            std.debug.print("old_far: {d:.3}, new_far: {d:.3}\n", .{ old_far, world.far_plane });
+        }
+
         const uploaded_bytes = try app.tick(allocator);
         if (uploaded_bytes) |bytes| {
             server_ctx.stats.mut.lock();

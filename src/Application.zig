@@ -11,6 +11,7 @@ pub const Camera = struct {
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
+    zoom_changed: std.Thread.ResetEvent,
     mut: std.Thread.Mutex,
 
     pub fn zoom(self: *Camera, amount: f32) void {
@@ -28,6 +29,27 @@ pub const Camera = struct {
         const zoom_amount = if (amount > distance - min_dist) distance - min_dist else amount;
 
         self.eye += look_dir * @as(zm.Vec, @splat(zoom_amount));
+        self.zoom_changed.set();
+    }
+
+    pub fn farPlane(self: *Camera, bbox: geom.BoundingBox) f32 {
+        const bsphere = bbox.ToBoundingSphere();
+        self.mut.lock();
+        const eye = self.eye;
+        self.mut.unlock();
+        const center = zm.Vec{
+            @as(f32, @floatFromInt(bsphere.center.x)),
+            @as(f32, @floatFromInt(bsphere.center.y)),
+            @as(f32, @floatFromInt(bsphere.center.z)),
+            1,
+        };
+
+        const dir = center - eye;
+        const ndir = zm.normalize3(dir);
+        const radius = @as(f32, @floatFromInt(bsphere.diameter)) / 2;
+        const far_plane_vec = dir + @as(zm.Vec, @splat(radius)) * ndir;
+
+        return zm.length3(far_plane_vec)[0];
     }
 
     pub fn pan(self: *Camera, amt: zm.Vec) void {
@@ -68,15 +90,18 @@ pub const Camera = struct {
             return;
         }
 
-        const diagonal = geom.Vector.FromPoint(bb.max.Minus(bb.min));
-        const radius = std.math.sqrt(@as(f32, @floatFromInt(diagonal.SquaredMagnitude()))) / 2.0;
+        const bsphere = bb.ToBoundingSphere();
+        const radius = @as(f32, @floatFromInt(bsphere.diameter)) / 2.0;
         const mult = if (aspect_ratio >= 1) 1 else aspect_ratio;
         const distance = radius / (std.math.tan(fov_rads / 2.0) * mult) * 1.10; // 10% padding
 
         // Convert center to f32 vector for camera focus
-        const center = try geom.Vector.FromPoint(bb.min.Plus(bb.max)).Divide(2);
-        const new_focus_point = zm.Vec{ @as(f32, @floatFromInt(center.dx)), @as(f32, @floatFromInt(center.dy)), @as(f32, @floatFromInt(center.dz)), 1.0 };
-        std.debug.print("bbox: {any}, center: {any}, focus: {any}, new_focus: {any}\n", .{ bb, center, self.focus_point, new_focus_point });
+        const new_focus_point = zm.Vec{
+            @as(f32, @floatFromInt(bsphere.center.x)),
+            @as(f32, @floatFromInt(bsphere.center.y)),
+            @as(f32, @floatFromInt(bsphere.center.z)),
+            1.0,
+        };
 
         // Set the new camera state.
         const current_distance = zm.length3(self.focus_point - self.eye)[0];
@@ -119,11 +144,12 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
             .focus_point = focus_point,
             .up = up,
             .mut = .{},
+            .zoom_changed = .{},
         },
         .mvp_ubo = .{
             .model = zm.identity(),
             .view = zm.lookAtRh(eye, focus_point, up),
-            .projection = zm.perspectiveFovRh(world.fov_rads, 1.0, 0.1, 10000.0),
+            .projection = zm.perspectiveFovRh(world.fov_rads, 1.0, world.near_plane, world.far_plane),
         },
         .should_exit = false,
         .should_fetch_id_buffers = false,
@@ -158,7 +184,7 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     const renderer = try vkr.Renderer.init(allocator, &vk_ctx, @intCast(window_ctx.width), @intCast(window_ctx.height));
 
     const aspect_ratio = @as(f32, @floatFromInt(window_ctx.width)) / @as(f32, @floatFromInt(window_ctx.height));
-    app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(std.math.pi / @as(f32, 4), aspect_ratio, 0.1, 1000.0);
+    app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(world.fov_rads, aspect_ratio, world.near_plane, world.far_plane);
 
     const tesselator = try allocator.create(wrld.Tesselator);
     tesselator.* = wrld.Tesselator.init(world);
@@ -238,7 +264,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
 
     if (self.window_ctx.should_resize) {
         const aspect_ratio = @as(f32, @floatFromInt(self.window_ctx.width)) / @as(f32, @floatFromInt(self.window_ctx.height));
-        self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(self.tesselator.world.fov_rads, aspect_ratio, 0.1, 10000.0);
+        self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(self.tesselator.world.fov_rads, aspect_ratio, self.tesselator.world.near_plane, self.tesselator.world.far_plane);
         self.window_ctx.resizing_done = true;
     }
 

@@ -120,8 +120,11 @@ pub const Vector = struct {
 
     // Avoids square-root calculation, I think is hard to do in computers, and
     // most of the times this seems to be all you need in calculations
-    pub fn SquaredMagnitude(self: Vector) i64 {
-        return self.dx * self.dx + self.dy * self.dy + self.dz * self.dz;
+    pub fn SquaredMagnitude(self: Vector) u64 {
+        const dx = @abs(self.dx);
+        const dy = @abs(self.dy);
+        const dz = @abs(self.dz);
+        return dx * dx + dy * dy + dz * dz;
     }
 };
 
@@ -191,7 +194,7 @@ pub const Line = struct {
     // TODO: figure out overflow.
     // TODO: This formula calculates the distance from a point to an *infinite*
     // line defined by p0 and p1. It does not consider the line segment's endpoints.
-    pub fn DistanceToPoint(self: Line, other: Point) i64 {
+    pub fn DistanceToPoint(self: Line, other: Point) u64 {
         // v0 represents the vector from self.p0 to self.p1 (analogous to x2 - x1 in some formula notations)
         const v0 = Vector.FromPoint(self.p1.Minus(self.p0));
         // v_p0_other represents the vector from self.p0 to the point 'other' (analogous to x0 - x1 in some formula notations)
@@ -211,8 +214,8 @@ pub const Line = struct {
             return 0;
         }
 
-        const tmp: u32 = @intCast(@divTrunc(numerator, denominator));
-        return @as(i64, @intFromFloat(std.math.sqrt(@as(f64, @floatFromInt(tmp)))));
+        const tmp = @divTrunc(numerator, denominator);
+        return @as(u64, @intFromFloat(std.math.sqrt(@as(f64, @floatFromInt(tmp)))));
     }
 };
 
@@ -266,6 +269,17 @@ pub const BoundingBox = struct {
         };
     }
 
+    pub fn ToBoundingSphere(self: *const BoundingBox) BoundingSphere {
+        const diagonal = Vector.FromPoint(self.max.Minus(self.min));
+        const diameter = std.math.sqrt(diagonal.SquaredMagnitude());
+        const center = Vector.FromPoint(self.min.Plus(self.max)).Divide(2) catch unreachable;
+
+        return .{
+            .center = center.ToPoint(),
+            .diameter = diameter,
+        };
+    }
+
     pub fn expand(self: *BoundingBox, p: *const Point) void {
         self.min.x = @min(self.min.x, p.x);
         self.min.y = @min(self.min.y, p.y);
@@ -274,6 +288,11 @@ pub const BoundingBox = struct {
         self.max.y = @max(self.max.y, p.y);
         self.max.z = @max(self.max.z, p.z);
     }
+};
+
+pub const BoundingSphere = struct {
+    center: Point,
+    diameter: u64,
 };
 
 test "BoundingBox operations" {

@@ -9,6 +9,8 @@ pub const World = struct {
     is_dirty: std.Thread.ResetEvent,
     mut: std.Thread.Mutex,
     fov_rads: f32,
+    near_plane: f32,
+    far_plane: f32,
 
     pub fn init() World {
         return World{
@@ -18,6 +20,8 @@ pub const World = struct {
             .is_dirty = .{},
             .mut = .{},
             .fov_rads = std.math.pi / 4.0,
+            .near_plane = 0.1,
+            .far_plane = 10000.0,
         };
     }
 

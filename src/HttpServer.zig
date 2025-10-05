@@ -293,6 +293,7 @@ test "Add vertex via /vertices endpoint" {
         .focus_point = .{ 0, 0, 0, 0 },
         .up = .{ 0, 0, 0, 0 },
         .mut = .{},
+        .zoom_changed = .{},
     };
     var app_ctx = app.AppContext{
         .prev_input_state = wnd.InputState{},
