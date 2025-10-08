@@ -35,6 +35,7 @@ pub fn main() !void {
     var server_ctx = HttpServer.ServerContext{
         .world = &world,
         .camera = &app.app_ctx.camera,
+        .app_ctx = app.app_ctx,
         .window_ctx = app.window_ctx,
         .allocator = allocator,
         .tessellation_cond = &(app.tesselator.should_tesselate),

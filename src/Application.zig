@@ -118,6 +118,7 @@ pub const AppContext = struct {
     should_fetch_id_buffers: bool,
     pointer_x: usize,
     pointer_y: usize,
+    needs_redraw: std.Thread.ResetEvent,
 };
 
 const Self = @This();
@@ -137,6 +138,8 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
     const focus_point: zm.Vec = .{ 0, 0, 0, 1 };
     const up: zm.Vec = .{ 0, 1, 0, 0 };
     var app_ctx = try allocator.create(AppContext);
+    var needs_redraw = std.Thread.ResetEvent{};
+    needs_redraw.set();
     app_ctx.* = AppContext{
         .prev_input_state = wnd.InputState{},
         .camera = .{
@@ -155,6 +158,7 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
         .should_fetch_id_buffers = false,
         .pointer_x = 0,
         .pointer_y = 0,
+        .needs_redraw = needs_redraw,
     };
 
     var window_ctx = try allocator.create(wnd.WindowingContext(*AppContext));
@@ -237,6 +241,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
         const upload_vertex_bytes = @sizeOf(@TypeOf(self.tesselator.renderable_vertices.vulkan_vertices)) * self.tesselator.renderable_vertices.vulkan_vertices.items.len + @sizeOf(@TypeOf(self.tesselator.renderable_vertices.vulkan_indices)) * self.tesselator.renderable_vertices.vulkan_indices.items.len;
         const upload_lines_bytes = @sizeOf(@TypeOf(self.tesselator.renderable_lines.vulkan_vertices)) * self.tesselator.renderable_lines.vulkan_vertices.items.len + @sizeOf(@TypeOf(self.tesselator.renderable_lines.vulkan_indices)) * self.tesselator.renderable_lines.vulkan_indices.items.len;
         uploaded_bytes = upload_vertex_bytes + upload_lines_bytes;
+        self.app_ctx.needs_redraw.set();
     }
 
     if (self.app_ctx.should_fetch_id_buffers) {
@@ -266,13 +271,15 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
         const aspect_ratio = @as(f32, @floatFromInt(self.window_ctx.width)) / @as(f32, @floatFromInt(self.window_ctx.height));
         self.app_ctx.mvp_ubo.projection = zm.perspectiveFovRh(self.tesselator.world.fov_rads, aspect_ratio, self.tesselator.world.near_plane, self.tesselator.world.far_plane);
         self.window_ctx.resizing_done = true;
+        self.app_ctx.needs_redraw.set();
     }
 
     const should_render = switch (self.os_window) {
         .xlib => true,
         .wayland => |window| try window.run(),
     };
-    if (should_render) {
+    if (should_render and self.app_ctx.needs_redraw.isSet()) {
+        self.app_ctx.needs_redraw.reset();
         self.app_ctx.camera.mut.lock();
         self.app_ctx.mvp_ubo.view = zm.lookAtRh(self.app_ctx.camera.eye, self.app_ctx.camera.focus_point, self.app_ctx.camera.up);
         const aspect_ratio = @as(f32, @floatFromInt(self.window_ctx.width)) / @as(f32, @floatFromInt(self.window_ctx.height));
@@ -328,6 +335,7 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
             const pitch_rads: f32 = @floatCast(delta_radians * delta_y);
 
             app_ctx.camera.rotate(pitch_rads, -yaw_rads);
+            app_ctx.needs_redraw.set();
         }
     }
 
@@ -339,10 +347,12 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
         app_ctx.camera.mut.lock();
         app_ctx.camera.focus_point = app_ctx.camera.eye + new_dir_long;
         app_ctx.camera.mut.unlock();
+        app_ctx.needs_redraw.set();
     }
 
     if (total_vertical_scroll != 0) {
         app_ctx.camera.zoom(@floatCast(total_vertical_scroll));
+        app_ctx.needs_redraw.set();
     }
 
     app_ctx.prev_input_state = input_state;

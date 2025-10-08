@@ -11,6 +11,7 @@ const wnd = @import("WindowingContext.zig");
 pub const ServerContext = struct {
     world: *World,
     camera: *app.Camera,
+    app_ctx: *app.AppContext,
     window_ctx: *wnd.WindowingContext(*app.AppContext),
     allocator: std.mem.Allocator, // Main application's allocator
     tessellation_cond: *std.Thread.Condition,
@@ -92,6 +93,7 @@ fn handleZoomToFit(server_ctx: *ServerContext, _: *httpz.Request, res: *httpz.Re
         return;
     };
 
+    server_ctx.app_ctx.needs_redraw.set();
     res.status = 200;
     try addTrailingNewline(res, .{ .message = "Zoom to fit successful" });
 }
@@ -127,6 +129,7 @@ fn handleMoveCamera(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz
         return;
     }
 
+    server_ctx.app_ctx.needs_redraw.set();
     res.status = 200;
     try addTrailingNewline(res, .{ .message = "Camera move command processed" });
 }
@@ -233,6 +236,7 @@ fn handlePostLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.
     }
 
     server_ctx.tessellation_cond.signal();
+    server_ctx.app_ctx.needs_redraw.set();
 
     res.status = 200;
     try addTrailingNewline(res, .{ .message = "Lines added successfully", .lines_received = lines_payload.value.len });
@@ -267,6 +271,7 @@ fn handleGetVertices(server_ctx: *ServerContext, req: *httpz.Request, res: *http
     };
 
     server_ctx.tessellation_cond.signal();
+    server_ctx.app_ctx.needs_redraw.set();
 
     res.status = 200;
     try addTrailingNewline(res, .{ .message = "Vertex added successfully", .p0 = p0 });
@@ -287,6 +292,8 @@ test "Add vertex via /vertices endpoint" {
         .mut = .{},
         .zoom_changed = .{},
     };
+    var needs_redraw = std.Thread.ResetEvent{};
+    needs_redraw.set();
     var app_ctx = app.AppContext{
         .prev_input_state = wnd.InputState{},
         .camera = camera,
@@ -299,6 +306,7 @@ test "Add vertex via /vertices endpoint" {
         .should_fetch_id_buffers = false,
         .pointer_x = 0,
         .pointer_y = 0,
+        .needs_redraw = needs_redraw,
     };
     var window_ctx = wnd.WindowingContext(*app.AppContext).init(&app_ctx, undefined, 680, 420);
 
@@ -313,6 +321,7 @@ test "Add vertex via /vertices endpoint" {
         },
         .camera = &camera,
         .window_ctx = &window_ctx,
+        .app_ctx = &app_ctx,
     };
 
     // Initialize HttpServer (in a separate thread)

@@ -4,7 +4,7 @@ import requests
 import math
 
 BASE_URL = "http://127.0.0.1:4042"
-NUM_LINES = 50000
+NUM_LINES = 10000
 
 def generate_spiral_points(num_points, start_angle=0, a=100, b=50):
     """Generates points for a 3D spiral."""
