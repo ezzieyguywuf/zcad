@@ -352,10 +352,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     const total_vertical_scroll = 10.0 * (input_state.vertical_scroll + app_ctx.prev_input_state.vertical_scroll);
     const total_horizontal_scroll = input_state.horizontal_scroll + app_ctx.prev_input_state.horizontal_scroll;
 
-    app_ctx.camera.mut.lock();
-    const dir_long = app_ctx.camera.focus_point - app_ctx.camera.eye;
-    app_ctx.camera.mut.unlock();
-
     const delta_radians = std.math.pi / @as(f64, @floatCast(368));
 
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
@@ -377,11 +373,8 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     }
 
     if (total_horizontal_scroll != 0) {
-        const angle = delta_radians * total_horizontal_scroll;
-        const rotate = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle));
-        const new_dir_long = zm.mul(rotate, dir_long);
-
-        app_ctx.camera.pan(new_dir_long);
+        const yaw_rads: f32 = @floatCast(delta_radians * total_horizontal_scroll);
+        app_ctx.camera.rotate(0, yaw_rads);
     }
 
     if (total_vertical_scroll != 0) {
