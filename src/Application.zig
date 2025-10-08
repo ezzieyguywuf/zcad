@@ -385,7 +385,12 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     }
 
     if (total_vertical_scroll != 0) {
-        app_ctx.camera.zoom(@floatCast(total_vertical_scroll));
+        app_ctx.camera.mut.lock();
+        const look_vec = app_ctx.camera.focus_point - app_ctx.camera.eye;
+        app_ctx.camera.mut.unlock();
+        const distance = zm.length3(look_vec)[0];
+        const scaled_scroll = total_vertical_scroll * distance * 0.0001;
+        app_ctx.camera.zoom(@floatCast(scaled_scroll));
     }
 
     app_ctx.prev_input_state = input_state;
