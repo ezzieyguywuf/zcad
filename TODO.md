@@ -2,6 +2,12 @@
 
 This file tracks planned architectural improvements and new features.
 
+## Bugs
+
+- [ ] Why does bench.py crash on my laptop at ~4200 lines when sending one line
+  at a time. batching by 100 lines at a time does not crash
+- [ ] maybe start using github issues
+
 ## Misc
 
 - [ ] Do real logging, stop sprinkling std.debug.print all over the place
