@@ -35,13 +35,14 @@ pub const HttpServer = struct {
 
         var router = try server.router(.{});
 
+        router.post("/lines", handlePostLines, .{});
+
         router.get("/stats", handleGetStats, .{});
         router.post("/moveCamera", handleMoveCamera, .{});
         router.post("/zoomToFit", handleZoomToFit, .{});
         // TODO: Re-examine if GET is the right verb for this endpoint.
         // It modifies server-side state, so POST might be more appropriate,
         // but this requires fixing the test client's handling of bodiless POST requests.
-        router.get("/lines", handleGetLines, .{});
         router.get("/vertices", handleGetVertices, .{});
 
         const thread = try server.listenInNewThread();
@@ -192,58 +193,49 @@ fn parsePoint(point_str: []const u8) ParsePointError!geom.Point {
     return geom.Point{ .x = coords[0], .y = coords[1], .z = coords[2] };
 }
 
-fn handleGetLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
-    const query = req.query() catch |err| {
-        std.debug.print("Failed to parse query string: {any}\n", .{err});
+const LinePayload = struct {
+    p0: [3]i64,
+    p1: [3]i64,
+};
+
+fn handlePostLines(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {
+    const body = req.body() orelse {
         res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Failed to parse query string" });
+        try addTrailingNewline(res, .{ .@"error" = "Failed to read request body" });
         return;
     };
 
-    const p0_str = query.get("p0") orelse {
+    const lines_payload = std.json.parseFromSlice([]LinePayload, server_ctx.allocator, body, .{}) catch |err| {
+        std.debug.print("Failed to parse lines payload: {any}\n", .{err});
         res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Missing query parameter p0 (e.g., p0=x1,y1,z1)" });
+        try addTrailingNewline(res, .{ .@"error" = "Failed to parse JSON payload. Expected an array of objects with p0: [x,y,z] and p1: [x,y,z]." });
         return;
     };
+    defer lines_payload.deinit();
 
-    const p1_str = query.get("p1") orelse {
-        res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Missing query parameter p1 (e.g., p1=x2,y2,z2)" });
-        return;
-    };
+    for (lines_payload.value) |line_payload| {
+        const p0 = geom.Point{ .x = line_payload.p0[0], .y = line_payload.p0[1], .z = line_payload.p0[2] };
+        const p1 = geom.Point{ .x = line_payload.p1[0], .y = line_payload.p1[1], .z = line_payload.p1[2] };
 
-    const p0 = parsePoint(p0_str) catch |err| {
-        std.debug.print("Failed to parse p0 '{s}': {any}\n", .{ p0_str, err });
-        res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Invalid format for p0. Expected x,y,z", .details = @errorName(err) });
-        return;
-    };
+        const new_line = geom.Line.init(p0, p1) catch |err| {
+            std.debug.print("Failed to initialize line from p0={any} to p1={any}: {any}\n", .{ p0, p1, err });
+            res.status = 400;
+            try addTrailingNewline(res, .{ .err = "Failed to create line", .details = @errorName(err) });
+            return;
+        };
 
-    const p1 = parsePoint(p1_str) catch |err| {
-        std.debug.print("Failed to parse p1 '{s}': {any}\n", .{ p1_str, err });
-        res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Invalid format for p1. Expected x,y,z", .details = @errorName(err) });
-        return;
-    };
-
-    const new_line = geom.Line.init(p0, p1) catch |err| {
-        std.debug.print("Failed to initialize line from p0={any} to p1={any}: {any}\n", .{ p0, p1, err });
-        res.status = 400;
-        try addTrailingNewline(res, .{ .err = "Failed to create line", .details = @errorName(err) });
-        return;
-    };
-
-    server_ctx.world.addLine(server_ctx.allocator, &new_line) catch |err| {
-        std.debug.print("HTTP Server: Error adding line to World: {any}\n", .{err});
-        res.status = 500;
-        try addTrailingNewline(res, .{ .err = "Failed to add line to internal storage" });
-        return;
-    };
+        server_ctx.world.addLine(server_ctx.allocator, &new_line) catch |err| {
+            std.debug.print("HTTP Server: Error adding line to World: {any}\n", .{err});
+            res.status = 500;
+            try addTrailingNewline(res, .{ .err = "Failed to add line to internal storage" });
+            return;
+        };
+    }
 
     server_ctx.tessellation_cond.signal();
 
     res.status = 200;
-    try addTrailingNewline(res, .{ .message = "Line added successfully", .p0 = p0, .p1 = p1 });
+    try addTrailingNewline(res, .{ .message = "Lines added successfully", .lines_received = lines_payload.value.len });
 }
 
 fn handleGetVertices(server_ctx: *ServerContext, req: *httpz.Request, res: *httpz.Response) !void {

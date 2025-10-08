@@ -3,29 +3,26 @@ import math
 
 BASE_URL = "http://127.0.0.1:4042"
 
-def draw_line(p0, p1):
-    """Sends a request to the server to draw a line."""
+def draw_lines(lines):
+    """Sends a request to the server to draw a list of lines."""
     try:
-        params = {
-            "p0": f"{p0[0]},{p0[1]},{p0[2]}",
-            "p1": f"{p1[0]},{p1[1]},{p1[2]}"
-        }
-        response = requests.get(f"{BASE_URL}/lines", params=params)
+        response = requests.post(f"{BASE_URL}/lines", json=lines)
         response.raise_for_status()
-        print(f"Successfully drew line from {p0} to {p1}")
+        print(f"Successfully drew {len(lines)} lines.")
     except requests.exceptions.RequestException as e:
-        print(f"Error drawing line from {p0} to {p1}: {e}")
+        print(f"Error drawing lines: {e}")
 
 def main():
     """Draws a few angled lines and a smooth curve."""
     # --- Draw a few longer lines at 45-degree angles ---
     print("Drawing angled lines...")
-    # A V-shape
-    draw_line((0, 1000, 0), (1000, 0, 0))
-    draw_line((1000, 0, 0), (2000, 1000, 0))
-    # A second, separate V-shape
-    draw_line((-2000, 1000, 0), (-1000, 0, 0))
-    draw_line((-1000, 0, 0), (0, 1000, 0))
+    angled_lines = [
+        {"p0": (0, 1000, 0), "p1": (1000, 0, 0)},
+        {"p0": (1000, 0, 0), "p1": (2000, 1000, 0)},
+        {"p0": (-2000, 1000, 0), "p1": (-1000, 0, 0)},
+        {"p0": (-1000, 0, 0), "p1": (0, 1000, 0)},
+    ]
+    draw_lines(angled_lines)
 
 
     # --- Sweep a bunch of shorter lines into a curve ---
@@ -43,9 +40,11 @@ def main():
         y = int(center_y + radius * math.sin(angle))
         points.append((x, y, 0))
 
+    curve_lines = []
     # Draw the line segments for the curve
     for i in range(num_segments):
-        draw_line(points[i], points[i+1])
+        curve_lines.append({"p0": points[i], "p1": points[i+1]})
+    draw_lines(curve_lines)
 
 if __name__ == "__main__":
     main()

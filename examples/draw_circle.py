@@ -13,16 +13,24 @@ CENTER_Y = 0
 CENTER_Z = 0
 # -------------------
 
-def draw_line(p0, p1):
-    """Sends a request to the zcad server to draw a line."""
-    # Add a check to prevent sending zero-length lines
-    if p0 == p1:
-        return
+import json
+import urllib.request
 
-    params = urllib.parse.urlencode({'p0': p0, 'p1': p1})
-    url = f"{SERVER_URL}/lines?{params}"
+# --- Configuration ---
+SERVER_URL = "http://127.0.0.1:4042"
+RADIUS = 1200
+SEGMENTS = 120
+CENTER_X = 0
+CENTER_Y = 0
+CENTER_Z = 0
+# -------------------
+
+def draw_lines(lines):
+    """Sends a request to the zcad server to draw a list of lines."""
     try:
-        with urllib.request.urlopen(url) as response:
+        data = json.dumps(lines).encode('utf-8')
+        req = urllib.request.Request(f"{SERVER_URL}/lines", data=data, headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req) as response:
             response.read()
     except Exception as e:
         print(f"  Error connecting to server: {e}")
@@ -32,6 +40,7 @@ def main():
     """Calculates points and draws a circle."""
     print(f"Generating and drawing a circle with {SEGMENTS} segments and radius {RADIUS}...")
 
+    lines = []
     # Calculate the coordinates for the first point
     last_x = CENTER_X + RADIUS
     last_y = CENTER_Y
@@ -49,15 +58,18 @@ def main():
         y = int(round(y_float))
 
         # Define the two points for the line segment
-        p0 = f"{last_x},{last_y},{CENTER_Z}"
-        p1 = f"{x},{y},{CENTER_Z}"
+        p0 = (last_x, last_y, CENTER_Z)
+        p1 = (x, y, CENTER_Z)
 
-        # Draw the line segment and the new vertex
-        draw_line(p0, p1)
+        # Add the line to the list
+        if p0 != p1:
+            lines.append({"p0": p0, "p1": p1})
 
         # Update the last point for the next iteration
         last_x = x
         last_y = y
+
+    draw_lines(lines)
 
     print("\nCircle drawing complete.")
 
