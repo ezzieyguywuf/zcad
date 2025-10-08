@@ -23,6 +23,7 @@ pub const RenderedVertices = struct {
     pub fn clear(self: *RenderedVertices) void {
         self.vulkan_vertices.clearRetainingCapacity();
         self.vulkan_indices.clearRetainingCapacity();
+        self.next_uid = 0;
     }
 
     // Adds a single vertex.
@@ -103,6 +104,7 @@ pub const RenderedLines = struct {
     pub fn clear(self: *RenderedLines) void {
         self.vulkan_vertices.clearRetainingCapacity();
         self.vulkan_indices.clearRetainingCapacity();
+        self.next_uid = 0;
     }
 
     pub fn addLine(self: *RenderedLines, allocator: std.mem.Allocator, line: geom.Line) !void {
