@@ -35,7 +35,6 @@ pub fn main() !void {
     var server_ctx = HttpServer.ServerContext{
         .world = &world,
         .camera = &app.app_ctx.camera,
-        .app_ctx = app.app_ctx,
         .window_ctx = app.window_ctx,
         .allocator = allocator,
         .tessellation_cond = &(app.tesselator.should_tesselate),
@@ -52,13 +51,23 @@ pub fn main() !void {
     while (app.should_loop()) {
         const start_time = std.time.microTimestamp();
 
-        if (app.app_ctx.camera.zoom_changed.isSet()) {
-            app.app_ctx.camera.zoom_changed.reset();
+        var camera_changed = app.app_ctx.camera.changed.load(.acquire);
+        if (camera_changed.zoom) {
+            camera_changed.zoom = false;
             world.mut.lock();
             defer world.mut.unlock();
 
             world.far_plane = app.app_ctx.camera.farPlane(world.bbox);
+
+            camera_changed.zoom = false;
+            app.app_ctx.camera.changed.store(camera_changed, .monotonic);
+            app.app_ctx.needs_redraw.set();
         }
+        if (camera_changed.any()) {
+            camera_changed.reset();
+            app.app_ctx.needs_redraw.set();
+        }
+        app.app_ctx.camera.changed.store(camera_changed, .release);
 
         const uploaded_bytes = try app.tick(allocator);
         if (uploaded_bytes) |bytes| {

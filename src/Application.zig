@@ -7,13 +7,39 @@ const wl = @import("WaylandContext.zig");
 const wrld = @import("World.zig");
 const geom = @import("Geometry.zig");
 
+pub const CameraChanged = packed struct(u8) {
+    zoom: bool,
+    pan: bool,
+    rotate: bool,
+    _padding: u5,
+
+    pub fn init() CameraChanged {
+        return .{
+            .zoom = false,
+            .pan = false,
+            .rotate = false,
+            ._padding = 0,
+        };
+    }
+
+    pub fn any(self: CameraChanged) bool {
+        return self.zoom or self.pan or self.rotate;
+    }
+
+    pub fn reset(self: *CameraChanged) void {
+        self.* = CameraChanged.init();
+    }
+};
 pub const Camera = struct {
     eye: zm.Vec,
     focus_point: zm.Vec,
     up: zm.Vec,
-    zoom_changed: std.Thread.ResetEvent,
+    changed: std.atomic.Value(CameraChanged),
     mut: std.Thread.Mutex,
 
+    pub fn resetChanged(self: *Camera) void {
+        self.changed.store(CameraChanged.init(), .acq_rel);
+    }
     pub fn zoom(self: *Camera, amount: f32) void {
         self.mut.lock();
         defer self.mut.unlock();
@@ -29,7 +55,10 @@ pub const Camera = struct {
         const zoom_amount = if (amount > distance - min_dist) distance - min_dist else amount;
 
         self.eye += look_dir * @as(zm.Vec, @splat(zoom_amount));
-        self.zoom_changed.set();
+
+        var changed = self.changed.load(.acquire);
+        changed.zoom = true;
+        self.changed.store(changed, .release);
     }
 
     pub fn farPlane(self: *Camera, bbox: geom.BoundingBox) f32 {
@@ -59,6 +88,9 @@ pub const Camera = struct {
         self.eye += amt;
         self.focus_point += amt;
 
+        var changed = self.changed.load(.acquire);
+        changed.pan = true;
+        self.changed.store(changed, .release);
         return;
     }
 
@@ -82,6 +114,10 @@ pub const Camera = struct {
 
         // just rotate up
         self.up = zm.rotate(rot_quat, self.up);
+
+        var changed = self.changed.load(.acquire);
+        changed.rotate = true;
+        self.changed.store(changed, .release);
     }
 
     pub fn zoomToFit(self: *Camera, bb: geom.BoundingBox, fov_rads: f32, aspect_ratio: f32) !void {
@@ -147,7 +183,7 @@ pub fn init(allocator: std.mem.Allocator, use_x11: bool, world: *wrld.World) !Se
             .focus_point = focus_point,
             .up = up,
             .mut = .{},
-            .zoom_changed = .{},
+            .changed = .{ .raw = CameraChanged.init() },
         },
         .mvp_ubo = .{
             .model = zm.identity(),
@@ -241,6 +277,7 @@ pub fn tick(self: *Self, allocator: std.mem.Allocator) !?usize {
         const upload_vertex_bytes = @sizeOf(@TypeOf(self.tesselator.renderable_vertices.vulkan_vertices)) * self.tesselator.renderable_vertices.vulkan_vertices.items.len + @sizeOf(@TypeOf(self.tesselator.renderable_vertices.vulkan_indices)) * self.tesselator.renderable_vertices.vulkan_indices.items.len;
         const upload_lines_bytes = @sizeOf(@TypeOf(self.tesselator.renderable_lines.vulkan_vertices)) * self.tesselator.renderable_lines.vulkan_vertices.items.len + @sizeOf(@TypeOf(self.tesselator.renderable_lines.vulkan_indices)) * self.tesselator.renderable_lines.vulkan_indices.items.len;
         uploaded_bytes = upload_vertex_bytes + upload_lines_bytes;
+
         self.app_ctx.needs_redraw.set();
     }
 
@@ -318,6 +355,7 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
     app_ctx.camera.mut.lock();
     const dir_long = app_ctx.camera.focus_point - app_ctx.camera.eye;
     app_ctx.camera.mut.unlock();
+
     const delta_radians = std.math.pi / @as(f64, @floatCast(368));
 
     if ((!input_state.window_moving) and (!input_state.window_resizing)) {
@@ -335,7 +373,6 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
             const pitch_rads: f32 = @floatCast(delta_radians * delta_y);
 
             app_ctx.camera.rotate(pitch_rads, -yaw_rads);
-            app_ctx.needs_redraw.set();
         }
     }
 
@@ -344,15 +381,11 @@ pub fn InputCallback(app_ctx: *AppContext, input_state: wnd.InputState) !void {
         const rotate = zm.matFromAxisAngle(app_ctx.camera.up, @floatCast(angle));
         const new_dir_long = zm.mul(rotate, dir_long);
 
-        app_ctx.camera.mut.lock();
-        app_ctx.camera.focus_point = app_ctx.camera.eye + new_dir_long;
-        app_ctx.camera.mut.unlock();
-        app_ctx.needs_redraw.set();
+        app_ctx.camera.pan(new_dir_long);
     }
 
     if (total_vertical_scroll != 0) {
         app_ctx.camera.zoom(@floatCast(total_vertical_scroll));
-        app_ctx.needs_redraw.set();
     }
 
     app_ctx.prev_input_state = input_state;
