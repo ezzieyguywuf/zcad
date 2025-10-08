@@ -1878,7 +1878,7 @@ pub const Vertex = struct {
     }
 };
 
-pub const LineFlags = packed struct {
+pub const LineFlags = packed struct(u32) {
     up: bool,
     left: bool, // For endcaps, this means is_start_cap
     edge: bool,
@@ -1886,12 +1886,6 @@ pub const LineFlags = packed struct {
     segment_index: u4, // Allows for up to 16 segments
     _padding: u24 = 0,
 };
-
-comptime {
-    if (@sizeOf(LineFlags) != 4) {
-        @compileError("LineFlags must be exactly 4 bytes (32 bits) to match the shader's u32 input.");
-    }
-}
 
 pub const Line = struct {
     const binding_description = vk.VertexInputBindingDescription{
