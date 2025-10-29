@@ -6,7 +6,7 @@
 
     .dependencies = .{
         .zig_wayland = .{
-            .url = "https://codeberg.org/DialecticalMaterialist/zig-wayland/archive/main.tar.gz",
+            .url = "https://codeberg.org/DialecticalMaterialist/zig-wayland/archive/3b65a75cf5b76e0509d1fdd7dcf5dc76b8f6ea0a.tar.gz",
             .hash = "wayland-0.5.0-dev-lQa1klnMAQDKcEqr-Sj4PcVpvuYBWqt0N_YaFvaXPOO2",
         },
         .vulkan_headers = .{
@@ -22,8 +22,8 @@
             .hash = "zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
         },
         .vulkan_zig = .{
-            .url = "https://github.com/Snektron/vulkan-zig/archive/refs/heads/master.zip",
-            .hash = "vulkan-0.0.0-r7Ytx5BBAwCay_2JFZPIdfMhfu28r5znPs1-DXRmuMIk",
+            .url = "https://github.com/Snektron/vulkan-zig/archive/bef498bfa583ff549e91726b9b8fb72377b2719c.tar.gz",
+            .hash = "vulkan-0.0.0-r7Ytx91DAwDKIXS2K_fFa-c_SJ5py7K1eCKwPcc33NcQ",
         },
     },
 
